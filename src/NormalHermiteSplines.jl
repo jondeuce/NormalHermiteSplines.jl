@@ -6,14 +6,10 @@ export evaluate, evaluate_one, evaluate_gradient
 export NormalSpline, RK_H0, RK_H1, RK_H2
 export get_epsilon, estimate_epsilon, get_cond, estimate_cond
 export estimate_accuracy
-# -- 1D case --
 export evaluate_derivative
-# --
-#####
-#include("./examples/Main.jl")
-#####
 
 using LinearAlgebra
+using StaticArrays
 
 abstract type ReproducingKernel end
 abstract type ReproducingKernel_0 <: ReproducingKernel end
@@ -21,6 +17,13 @@ abstract type ReproducingKernel_1 <: ReproducingKernel_0 end
 abstract type ReproducingKernel_2 <: ReproducingKernel_1 end
 
 abstract type AbstractSpline end
+
+const AbstractVectorOfSVectors{N,T} = AbstractVector{SVector{N,T}}
+
+@inline function to_vectors(x::AbstractMatrix{T}) where {T}
+    N, M = size(x)
+    SVector{N,T}[SVector{N,T}(ntuple(i -> x[i,j], N)) for j in 1:M]
+end
 
 @doc raw"
 `struct NormalSpline{T, RK} <: AbstractSpline where {T <: AbstractFloat, RK <: ReproducingKernel_0}`
@@ -604,7 +607,7 @@ Get a value of the Gram matrix spectral condition number. It is obtained by mean
 Return: a value of the Gram matrix spectral condition number.
 """
 function get_cond(nodes::Matrix{T}, kernel::RK) where {T <: AbstractFloat, RK <: ReproducingKernel_0}
-  return _get_cond(nodes, kernel)
+    return _get_cond(nodes, kernel)
 end
 
 """

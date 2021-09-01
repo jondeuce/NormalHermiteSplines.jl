@@ -230,7 +230,6 @@ end
 
 function _evaluate(spline::NormalSpline{T, RK},
                    points::Matrix{T},
-                   do_parallel::Bool = false
                   ) where {T <: AbstractFloat, RK <: ReproducingKernel_0}
     if isnothing(spline)
         error("Spline was not prepared.")
@@ -263,54 +262,15 @@ function _evaluate(spline::NormalSpline{T, RK},
     istart2 = istart3 = istart4 = 0
     mu = spline._mu[1:n_1]
     d_mu = spline._mu[(n_1 + 1):end]
-    if do_parallel && m >= 1000 && Threads.nthreads() >= 4
-        step = m ÷ 4
-        iend1 = 1 + step
-        istart2 = iend1 + 1
-        iend2 = istart2 + step
-        istart3 = iend2 + 1
-        iend3 = (istart3 + step) < m ? (istart3 + step) : m
-        istart4 = iend3 + 1
-        @inbounds Threads.@threads for t = 1:4
-            if t == 1
-                _do_work(1, iend1, pts, spline._nodes, mu, spline._kernel, spline_values)
-                if !isnothing(spline._d_nodes)
-                    _do_work_d(1, iend1, pts, spline._d_nodes, spline._es, d_mu, spline._kernel, spline_values)
-                end
-            elseif t == 2
-                _do_work(istart2, iend2, pts, spline._nodes, mu, spline._kernel, spline_values)
-                if !isnothing(spline._d_nodes)
-                    _do_work_d(istart2, iend2, pts, spline._d_nodes, spline._es, d_mu, spline._kernel, spline_values)
-                end
-            elseif t == 3
-                _do_work(istart3, iend3, pts, spline._nodes, mu, spline._kernel, spline_values)
-                if !isnothing(spline._d_nodes)
-                    _do_work_d(istart3, iend3, pts, spline._d_nodes, spline._es, d_mu, spline._kernel, spline_values)
-                end
-            elseif t == 4
-                if istart4 <= m
-                    _do_work(istart4, m, pts, spline._nodes, mu, spline._kernel, spline_values)
-                    if !isnothing(spline._d_nodes)
-                        if istart4 <= m
-                            _do_work_d(istart4, m, pts, spline._d_nodes, spline._es, d_mu, spline._kernel, spline_values)
-                        end
-                    end
-                end
-            end
-        end
-    else
-        _do_work(1, m, pts, spline._nodes, mu, spline._kernel, spline_values)
-        if !isnothing(spline._d_nodes)
-            _do_work_d(1, m, pts, spline._d_nodes, spline._es, d_mu, spline._kernel, spline_values)
-        end
+    _do_work(pts, spline._nodes, mu, spline._kernel, spline_values)
+    if !isnothing(spline._d_nodes)
+        _do_work_d(pts, spline._d_nodes, spline._es, d_mu, spline._kernel, spline_values)
     end
 
     return spline_values
 end
 
-function _do_work(istart::Int,
-                  iend::Int,
-                  points::Matrix{T},
+function _do_work(points::Matrix{T},
                   nodes::Matrix{T},
                   mu::Vector{T},
                   kernel::RK,
@@ -318,7 +278,7 @@ function _do_work(istart::Int,
                 ) where {T <: AbstractFloat, RK <: ReproducingKernel_0}
     n_1 = size(nodes, 2)
     h_values = Vector{T}(undef, n_1)
-    @inbounds for p = istart:iend
+    @inbounds for p = 1:size(points, 2)
         for i = 1:n_1
             h_values[i] = _rk(kernel, points[:,p], nodes[:,i])
         end
@@ -326,9 +286,7 @@ function _do_work(istart::Int,
     end
 end
 
-function _do_work_d(istart::Int,
-                    iend::Int,
-                    pts::Matrix{T},
+function _do_work_d(points::Matrix{T},
                     d_nodes::Matrix{T},
                     es::Matrix{T},
                     d_mu::Vector{T},
@@ -337,9 +295,9 @@ function _do_work_d(istart::Int,
                    ) where {T <: AbstractFloat, RK <: ReproducingKernel_1}
    n_2 = size(d_nodes, 2)
    d_h_values = Vector{T}(undef, n_2)
-   @inbounds for p = istart:iend
+   @inbounds for p = 1:size(points, 2)
        for i = 1:n_2
-           d_h_values[i] = _∂rk_∂e(kernel, pts[:,p], d_nodes[:,i], es[:,i])
+           d_h_values[i] = _∂rk_∂e(kernel, points[:,p], d_nodes[:,i], es[:,i])
        end
        spline_values[p] += sum(d_mu .* d_h_values)
     end
