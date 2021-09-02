@@ -81,53 +81,50 @@ end
     return kernel.ε^2 * exp(-x) * (t ⋅ e)
 end
 
-@inline function _∂rk_∂η_k(kernel::RK_H2, η::SVector, ξ::SVector, ::Val{k}) where {k}
-    x = kernel.ε * norm(η - ξ)
-    return kernel.ε^2 * exp(-x) * (1 + x) * (ξ[k] - η[k])
+@inline function _∂rk_∂η(kernel::RK_H2, η::SVector, ξ::SVector)
+    t = η - ξ
+    x = kernel.ε * norm(t)
+    return -kernel.ε^2 * exp(-x) * (1 + x) * t
 end
 
-@inline function _∂rk_∂η_k(kernel::RK_H1, η::SVector, ξ::SVector, ::Val{k}) where {k}
-    x = kernel.ε * norm(η - ξ)
-    return kernel.ε^2 * exp(-x) * (ξ[k] - η[k])
+@inline function _∂rk_∂η(kernel::RK_H1, η::SVector, ξ::SVector)
+    t = η - ξ
+    x = kernel.ε * norm(t)
+    return -kernel.ε^2 * exp(-x) * t
 end
 
-@inline function _∂rk_∂η_k(kernel::RK_H0, η::SVector, ξ::SVector, ::Val{k}) where {k}
+@inline function _∂rk_∂η(kernel::RK_H0, η::SVector, ξ::SVector)
     # Note: Derivative of spline built with reproducing kernel RK_H0 does not exist at the spline nodes
-    normt = norm(η - ξ)
-    x = kernel.ε * normt
+    t = η - ξ
+    tnrm = norm(t)
+    x = kernel.ε * tnrm
     ∇ = kernel.ε * exp(-x)
-    return normt < sqrt(eps(typeof(x))) ? ∇ * sign(ξ[k] - η[k]) : ∇ * (ξ[k] - η[k]) / normt
+    t  = ifelse(x > eps(typeof(x)), t, zeros(t))
+    ∇ *= ifelse(x > eps(typeof(x)), inv(tnrm), one(tnrm))
+    ∇ *= t
 end
 
-@generated function _∂rk_∂η(kernel::RK, η::SVector{n}, ξ::SVector{n}) where {n, RK <: ReproducingKernel_0}
-    vals = [:(_∂rk_∂η_k(kernel, η, ξ, Val($k))) for k in 1:n]
-    :(Base.@_inline_meta; SVector{$n}(tuple($(vals...))))
+@inline function _∂²rk_∂η∂ξ(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}) where {n}
+    ε     = kernel.ε
+    ε²    = ε * ε
+    t     = η - ξ
+    tnrm  = norm(t)
+    x     = ε * tnrm
+    ε²e⁻ˣ = ε² * exp(-x)
+    S     = SMatrix{n,n,typeof(x)}
+    ∇²    = S((1 + x) * ε²e⁻ˣ * I)
+    ∇²   -= (ε² * ε²e⁻ˣ) * (t * t')
 end
 
-@inline function _∂²rk_∂η_r_∂ξ_k(kernel::RK_H2, η::SVector, ξ::SVector, ::Val{r}, ::Val{k}) where {r,k}
-    ε  = kernel.ε
-    ε² = ε * ε
-    x  = ε * norm(η - ξ)
-    if r == k
-        ε² * ifelse(x <= 0, one(x), exp(-x) * (1 + x - (ε * (ξ[r] - η[r]))^2))
-    else
-        ifelse(x <= 0, zero(x), -ε² * ε² * exp(-x) * (ξ[r] - η[r]) * (ξ[k] - η[k]))
-    end
-end
-
-@inline function _∂²rk_∂η_r_∂ξ_k(kernel::RK_H1, η::SVector, ξ::SVector, ::Val{r}, ::Val{k}) where {r,k}
-    ε  = kernel.ε
-    ε² = ε * ε
-    t  = norm(η - ξ)
-    x  = ε * t
-    if r == k
-        ifelse(t <= 0, ε², ε² * exp(-x) * (1 - ε * (ξ[r] - η[r])^2 / t))
-    else
-        ifelse(t <= 0, zero(x), -ε * ε² * exp(-x) * (ξ[r] - η[r]) * (ξ[k] - η[k]) / t)
-    end
-end
-
-@generated function _∂²rk_∂η∂ξ(kernel::RK, η::SVector{n}, ξ::SVector{n}) where {n, RK <: ReproducingKernel_1}
-    vals = [:(_∂²rk_∂η_r_∂ξ_k(kernel, η, ξ, Val($r), Val($k))) for r in 1:n, k in 1:n]
-    :(Base.@_inline_meta; SMatrix{$n,$n}(tuple($(vals...))))
+@inline function _∂²rk_∂η∂ξ(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}) where {n}
+    # Note: Second derivative of spline built with reproducing kernel RK_H1 does not exist at the spline nodes
+    ε     = kernel.ε
+    ε²    = ε * ε
+    t     = η - ξ
+    tnrm  = norm(t)
+    x     = ε * tnrm
+    ε²e⁻ˣ = ε² * exp(-x)
+    S     = SMatrix{n,n,typeof(x)}
+    ∇²    = S(ε²e⁻ˣ * I)
+    ∇²   -= ifelse(tnrm <= 0, zeros(S), (ε * ε²e⁻ˣ / tnrm) * (t * t'))
 end
