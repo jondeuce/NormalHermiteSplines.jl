@@ -151,7 +151,7 @@ end
 # ```
 function _estimate_cond(
         gram::AbstractMatrix{T},
-        chol::LinearAlgebra.Cholesky{T,Array{T,2}},
+        chol::LinearAlgebra.Cholesky{T,Matrix{T}},
         nit = 3,
     ) where {T}
     normgram = norm(gram, 1)

@@ -47,3 +47,40 @@ function _gram!(
     end
     return mat
 end
+
+"""
+    _insert_factor_column(C::LinearAlgebra.Cholesky{T,Matrix{T}}, v::AbstractVector{T}) where {T}
+
+Update the Cholesky factorization `C` as if a row and column were inserted
+into the underlying matrix `A`. Specifically, let `C = cholesky(A)` and
+
+    Ã = [A  d]
+        [dᵀ γ]
+
+where `v = [d; γ]`.
+
+The corresponding updated cholesky factorization is:
+
+    L̃ = [L   ]
+        [eᵀ α]
+
+where `e = L⁻¹d`, `α = √τ`, and `τ = γ - e⋅e > 0`.
+If `τ ≤ 0` then `Ã` is not positive definite.
+
+See:
+    https://igorkohan.github.io/NormalHermiteSplines.jl/dev/Normal-Splines-Method/#Algorithms-for-updating-Cholesky-factorization
+"""
+function _insert_factor_column(
+        C::LinearAlgebra.Cholesky{T,Matrix{T}},
+        v::AbstractVector{T},
+    ) where {T}
+    @assert size(C,1) == size(C,2) == length(v)-1
+    m = size(C,1)
+    d = @views v[1:m]
+    γ = @inbounds v[m+1]
+    e = C.L\d
+    τ = max(γ - e⋅e, zero(T))
+    α = √τ
+    U = UpperTriangular([C.U e; e' α])
+    return Cholesky(U, :U, 0)
+end

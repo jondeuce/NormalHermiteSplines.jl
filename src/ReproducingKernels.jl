@@ -11,14 +11,10 @@ V(\eta , \xi, \varepsilon) = \exp (-\varepsilon |\xi - \eta|) \, .
 "
 struct RK_H0{T} <: ReproducingKernel_0
     ε::T
+    RK_H0() = new{Float64}(0.0)
+    RK_H0(ε) = (@assert ε > 0; new{typeof(float(ε))}(float(ε)))
+    RK_H0{T}(ε) where {T} = (@assert ε > 0; new{T}(T(ε)))
 end
-function RK_H0(ε)
-    ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
-    ε = float(ε)
-    RK_H0{typeof(ε)}(ε)
-end
-RK_H0() = RK_H0{Float64}(0.0)
-RK_H0{T}() where {T} = RK_H0{T}(zero(T))
 
 @doc raw"
 `struct RK_H1{T} <: ReproducingKernel_1`
@@ -34,14 +30,10 @@ V(\eta , \xi, \varepsilon) = \exp (-\varepsilon |\xi - \eta|)
 "
 struct RK_H1{T} <: ReproducingKernel_1
     ε::T
+    RK_H1() = new{Float64}(0.0)
+    RK_H1(ε) = (@assert ε > 0; new{typeof(float(ε))}(float(ε)))
+    RK_H1{T}(ε) where {T} = (@assert ε > 0; new{T}(T(ε)))
 end
-function RK_H1(ε)
-    ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
-    ε = float(ε)
-    RK_H1{typeof(ε)}(ε)
-end
-RK_H1() = RK_H1{Float64}(0.0)
-RK_H1{T}() where {T} = RK_H1{T}(zero(T))
 
 @doc raw"
 `struct RK_H2{T} <: ReproducingKernel_2`
@@ -57,14 +49,10 @@ V(\eta , \xi, \varepsilon) = \exp (-\varepsilon |\xi - \eta|)
 "
 struct RK_H2{T} <: ReproducingKernel_2
     ε::T
+    RK_H2() = new{Float64}(0.0)
+    RK_H2(ε) = (@assert ε > 0; new{typeof(float(ε))}(float(ε)))
+    RK_H2{T}(ε) where {T} = (@assert ε > 0; new{T}(T(ε)))
 end
-function RK_H2(ε)
-    ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
-    ε = float(ε)
-    RK_H2{typeof(ε)}(ε)
-end
-RK_H2() = RK_H2{Float64}(0.0)
-RK_H2{T}() where {T} = RK_H2{T}(zero(T))
 
 @inline function _rk(kernel::RK_H2, η::SVector, ξ::SVector)
     x = kernel.ε * norm(η - ξ)
