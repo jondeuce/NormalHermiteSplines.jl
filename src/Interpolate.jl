@@ -1,25 +1,16 @@
 function _prepare(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
-    min_bound, compression = _normalization_scaling(nodes)
-    nodes_normalized = (x -> (x .- min_bound) ./ compression).(nodes)
+    min_bound, max_bound, compression = _normalization_scaling(nodes)
+    nodes = _normalize.(nodes, (min_bound,), (max_bound,), compression)
 
     if kernel.ε == 0
-        ε = _estimate_ε(nodes_normalized)
-        if isa(kernel, RK_H0)
-            kernel = RK_H0(ε)
-        elseif isa(kernel, RK_H1)
-            ε *= 3 // 2
-            kernel = RK_H1(ε)
-        elseif isa(kernel, RK_H2)
-            ε *= 2
-            kernel = RK_H2(ε)
-        else
-            error("incorrect `kernel` type.")
-        end
+        ε  = _estimate_ε(nodes)
+        ε *= _ε_factor(kernel, ε)
+        kernel = typeof(kernel)(ε)
     end
 
-    T = eltype(eltype(nodes_normalized))
+    T = eltype(eltype(nodes))
     n_1 = length(nodes)
-    gram = _gram!(zeros(T, n_1, n_1), nodes_normalized, kernel)
+    gram = _gram!(zeros(T, n_1, n_1), nodes, kernel)
     chol = nothing
     try
         chol = cholesky(gram)
@@ -30,16 +21,14 @@ function _prepare(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
     cond = _estimate_cond(gram, chol)
 
     spline = NormalSpline(kernel,
-                          compression,
-                          copy(nodes),
-                          nodes_normalized,
-                          nothing,
-                          nothing,
+                          nodes,
                           nothing,
                           nothing,
                           nothing,
                           nothing,
                           min_bound,
+                          max_bound,
+                          compression,
                           gram,
                           chol,
                           nothing,
@@ -63,16 +52,14 @@ function _construct(spline::NormalSpline{n,T,RK},
     ldiv!(mu, spline._chol, values)
 
     spline = NormalSpline(spline._kernel,
-                          spline._compression,
                           spline._nodes,
-                          spline._nodes_normalized,
                           values,
                           nothing,
                           nothing,
                           nothing,
-                          nothing,
-                          nothing,
                           spline._min_bound,
+                          spline._max_bound,
+                          spline._compression,
                           cleanup ? nothing : spline._gram,
                           cleanup ? nothing : spline._chol,
                           mu,
@@ -84,28 +71,22 @@ end
 ###################
 
 function _prepare(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, es::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
-    min_bound, compression = _normalization_scaling(nodes, d_nodes)
-    nodes_normalized = (x -> (x .- min_bound) ./ compression).(nodes)
-    d_nodes_normalized = (x -> (x .- min_bound) ./ compression).(d_nodes)
-    es_normalized = es ./ norm.(es)
+    # Normalize inputs, making copies in the process to avoid aliasing
+    min_bound, max_bound, compression = _normalization_scaling(nodes, d_nodes)
+    nodes = _normalize.(nodes, (min_bound,), (max_bound,), compression)
+    d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), compression)
+    es = es ./ norm.(es)
 
     if kernel.ε == 0
-        ε = _estimate_ε(nodes_normalized, d_nodes_normalized)
-        if isa(kernel, RK_H1)
-            ε *= 2
-            kernel = RK_H1(ε)
-        elseif isa(kernel, RK_H2)
-            ε *= 5 // 2
-            kernel = RK_H2(ε)
-        else
-            error("incorrect `kernel` type.")
-        end
+        ε = _estimate_ε(nodes, d_nodes)
+        ε *= _ε_factor_d(kernel, ε)
+        kernel = typeof(kernel)(ε)
     end
 
     n_1 = length(nodes)
     n_2 = length(d_nodes)
-    T = promote_type(eltype(eltype(nodes_normalized)), eltype(eltype(d_nodes_normalized)), eltype(eltype(es_normalized)))
-    gram = _gram!(zeros(T, n_1 + n_2, n_1 + n_2), nodes_normalized, d_nodes_normalized, es_normalized, kernel)
+    T = promote_type(eltype(eltype(nodes)), eltype(eltype(d_nodes)), eltype(eltype(es)))
+    gram = _gram!(zeros(T, n_1 + n_2, n_1 + n_2), nodes, d_nodes, es, kernel)
     chol = nothing
     try
         chol = cholesky(gram)
@@ -116,16 +97,14 @@ function _prepare(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, es::Ab
     cond = _estimate_cond(gram, chol)
 
     spline = NormalSpline(kernel,
-                          compression,
-                          copy(nodes),
-                          nodes_normalized,
+                          nodes,
                           nothing,
-                          copy(d_nodes),
-                          d_nodes_normalized,
-                          copy(es),
-                          es_normalized,
+                          d_nodes,
+                          es,
                           nothing,
                           min_bound,
+                          max_bound,
+                          compression,
                           gram,
                           chol,
                           nothing,
@@ -153,16 +132,14 @@ function _construct(spline::NormalSpline{n,T,RK},
     ldiv!(mu, spline._chol, [values; spline._compression .* d_values])
 
     spline = NormalSpline(spline._kernel,
-                          spline._compression,
                           spline._nodes,
-                          spline._nodes_normalized,
                           values,
                           spline._d_nodes,
-                          spline._d_nodes_normalized,
                           spline._es,
-                          spline._es_normalized,
                           d_values,
                           spline._min_bound,
+                          spline._max_bound,
+                          spline._compression,
                           cleanup ? nothing : spline._gram,
                           cleanup ? nothing : spline._chol,
                           mu,
@@ -171,30 +148,26 @@ function _construct(spline::NormalSpline{n,T,RK},
     return spline
 end
 
-function _evaluate!(
+@inline function _evaluate!(
         spline_values::AbstractVector,
         spline::NormalSpline{n, <:Any, <:ReproducingKernel_0},
         points::AbstractVecOfSVecs{n},
     ) where {n}
-    for i = 1:length(points)
+    @inbounds for i in 1:length(points)
         spline_values[i] = _evaluate(spline, points[i])
     end
     return spline_values
 end
 
-function _evaluate(
+@inline function _evaluate(
         spline::NormalSpline{n, <:Any, <:ReproducingKernel_0},
         point::SVector{n},
     ) where {n}
-    n_1 = length(spline._nodes_normalized)
-    mu = @views spline._mu[1:n_1]
-    d_mu = @views spline._mu[n_1 + 1:end]
-    point = (point .- spline._min_bound) ./ spline._compression
-
-    if isnothing(spline._d_nodes_normalized)
-        _evaluate(point, spline._nodes_normalized, mu, spline._kernel)
+    point = _normalize(spline, point)
+    if isnothing(spline._d_nodes)
+        _evaluate(point, spline._nodes, spline._mu, spline._kernel)
     else
-        _evaluate(point, spline._nodes_normalized, spline._d_nodes_normalized, spline._es_normalized, mu, d_mu, spline._kernel)
+        _evaluate(point, spline._nodes, spline._d_nodes, spline._es, spline._mu, spline._kernel)
     end
 end
 
@@ -218,29 +191,25 @@ end
         d_nodes::AbstractVecOfSVecs,
         es::AbstractVecOfSVecs,
         mu::AbstractVector,
-        d_mu::AbstractVector,
         kernel::ReproducingKernel_1,
     )
+    n_1 = length(nodes)
     v = _evaluate(point, nodes, mu, kernel)
-    for i in 1:length(d_nodes)
-        v += d_mu[i] * _∂rk_∂e(kernel, point, d_nodes[i], es[i])
+    @inbounds for i in 1:length(d_nodes)
+        v += mu[i+n_1] * _∂rk_∂e(kernel, point, d_nodes[i], es[i])
     end
     return v
 end
 
-function _evaluate_gradient(
+@inline function _evaluate_gradient(
         spline::NormalSpline{n, <:Any, <:ReproducingKernel_0},
         point::SVector{n},
     ) where {n}
-    n_1 = length(spline._nodes_normalized)
-    mu = @views spline._mu[1:n_1]
-    d_mu = @views spline._mu[n_1 + 1:end]
-    point = (point .- spline._min_bound) ./ spline._compression
-
-    if isnothing(spline._d_nodes_normalized)
-        _evaluate_gradient(point, spline._nodes_normalized, mu, spline._kernel) ./ spline._compression
+    point = _normalize(spline, point)
+    if isnothing(spline._d_nodes)
+        _evaluate_gradient(point, spline._nodes, spline._mu, spline._kernel) ./ spline._compression
     else
-        _evaluate_gradient(point, spline._nodes_normalized, spline._d_nodes_normalized, spline._es_normalized, mu, d_mu, spline._kernel) ./ spline._compression
+        _evaluate_gradient(point, spline._nodes, spline._d_nodes, spline._es, spline._mu, spline._kernel) ./ spline._compression
     end
 end
 
@@ -251,13 +220,13 @@ end
         kernel::ReproducingKernel_0,
     ) where {n}
     T = promote_type(typeof(kernel.ε), eltype(point), eltype(eltype(nodes)), eltype(mu))
-    grad = zero(SVector{n,T})
-    @inbounds for i = 1:length(nodes)
-        μ = mu[i]
+    ∇ = zero(SVector{n,T})
+    @inbounds for i in 1:length(nodes)
+        μ    = mu[i]
         node = nodes[i]
-        grad += SVector(ntuple(k -> μ * _∂rk_∂η_k(kernel, point, node, k), n))
+        ∇   += μ * _∂rk_∂η(kernel, point, node)
     end
-    return grad
+    return ∇
 end
 
 @inline function _evaluate_gradient(
@@ -266,21 +235,16 @@ end
         d_nodes::AbstractVecOfSVecs{n},
         es::AbstractVecOfSVecs{n},
         mu::AbstractVector,
-        d_mu::AbstractVector,
         kernel::ReproducingKernel_1,
     ) where {n}
-    grad = _evaluate_gradient(point, nodes, mu, kernel)
-    RK = CartesianIndices((n, n))
-    @inbounds for i = 1:length(d_nodes)
-        ∂μ = d_mu[i]
+    n_1 = length(nodes)
+    ∇ = _evaluate_gradient(point, nodes, mu, kernel)
+    @inbounds for i in 1:length(d_nodes)
+        μi    = mu[n_1 + i]
         ∂node = d_nodes[i]
-        ê = es[i]
-        ∂ = ntuple(n * n) do j
-            r, k = Tuple(RK[j])
-            _∂²rk_∂η_r_∂ξ_k(kernel, point, ∂node, r, k)
-        end
-        ∂ = SMatrix{n,n}(∂)
-        grad += ∂μ * (∂ * ê)
+        êi    = es[i]
+        ∂²rk  = _∂²rk_∂η∂ξ(kernel, point, ∂node)
+        ∇    += μi * (∂²rk * êi)
     end
-    return grad
+    return ∇
 end

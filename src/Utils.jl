@@ -1,47 +1,47 @@
+@inbounds function _normalize(point::SVector{n}, min_bound::SVector{n}, max_bound::SVector{n}, compression::Real) where {n}
+    return (point .- min_bound) ./ compression
+    # return clamp.((point .- min_bound) ./ compression, 0, 1) #TODO: clamp nodes? roughly equivalent to nearest neighbour extrapolation
+end
+@inbounds function _normalize(spline::NormalSpline{n}, point::SVector{n}) where {n}
+    return _normalize(point, spline._min_bound, spline._max_bound, spline._compression)
+end
+
+@inbounds function _unnormalize(point::SVector{n}, min_bound::SVector{n}, max_bound::SVector{n}, compression::Real) where {n}
+    return min_bound .+ compression .* point
+    # return clamp.(min_bound .+ compression .* point, min_bound, max_bound) #TODO: clamp nodes? roughly equivalent to nearest neighbour extrapolation
+end
+@inbounds function _unnormalize(spline::NormalSpline{n}, point::SVector{n}) where {n}
+    return _unnormalize(point, spline._min_bound, spline._max_bound, spline._compression)
+end
+
 function _normalization_scaling(nodes::AbstractVecOfSVecs)
     min_bound = reduce((x, y) -> min.(x, y), nodes)
     max_bound = reduce((x, y) -> max.(x, y), nodes)
     compression = maximum(max_bound .- min_bound)
-    return min_bound, compression
+    return min_bound, max_bound, compression
 end
 
 function _normalization_scaling(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs)
     min_bound = min.(reduce((x, y) -> min.(x, y), nodes), reduce((x, y) -> min.(x, y), d_nodes))
     max_bound = max.(reduce((x, y) -> max.(x, y), nodes), reduce((x, y) -> max.(x, y), d_nodes))
     compression = maximum(max_bound .- min_bound)
-    return min_bound, compression
+    return min_bound, max_bound, compression
 end
 
 function _estimate_accuracy(spline::NormalSpline{n,T,RK}) where {n,T,RK <: ReproducingKernel_0}
-    nodes = (x -> spline._min_bound .+ spline._compression .* x).(spline._nodes)
-    σ = _evaluate!(zeros(T, length(nodes)), spline, nodes)
-    # calculating a value of the Relative Maximum Absolute Error (RMAE) of interpolation
-    # at the function value interpolation nodes.
-    fun_max = maximum(abs, spline._values)
-    if fun_max > 0
-        rmae = maximum(abs.(spline._values .- σ)) / fun_max
-    else
-        rmae = maximum(abs.(spline._values .- σ))
+    vmax = maximum(abs, spline._values)
+    rmae = zero(T)
+    @inbounds for i in 1:length(spline._nodes)
+        point = _unnormalize(spline, spline._nodes[i])
+        σ = _evaluate(spline, point)
+        rmae = max(rmae, abs(spline._values[i] - σ))
     end
-    rmae = rmae > eps(T) ? rmae : eps(T)
-    #= 
-    # calculating a value of the Relative Maximum Absolute Error (RMAE) of interpolation
-    # at the function value interpolation nodes.
-    fun_max = maximum(abs, spline._values)
-    for i in 1:length(spline._nodes_normalized)
-        node = spline._min_bound .+ spline._compression .* spline._nodes_normalized[i]
-        σ = _evaluate!(zeros(T, length(nodes)), spline, nodes)
-        if fun_max > 0
-            rmae = maximum(abs.(spline._values .- σ)) / fun_max
-        else
-            rmae = maximum(abs.(spline._values .- σ))
-        end
-        rmae = rmae > eps(T) ? rmae : eps(T)
-    end =#
-    res = -floor(log10(rmae)) - 1
-    if res <= 0
-        res = 0
+    if vmax > 0
+        rmae /= vmax
     end
+    rmae = max(rmae, eps(T))
+    res  = -floor(log10(rmae)) - 1
+    res  = max(res, 0)
     return trunc(Int, res)
 end
 
@@ -61,88 +61,66 @@ function _pairwise_sum_norms_weighted(nodes::AbstractVecOfSVecs{n,T}, d_nodes::A
     return ℓ
 end
 
+@inline _ε_factor(::RK_H0, ε::T) where {T} = one(T)
+@inline _ε_factor(::RK_H1, ε::T) where {T} = T(3)/2
+@inline _ε_factor(::RK_H2, ε::T) where {T} = T(2)
+
+@inline _ε_factor_d(::RK_H0, ε::T) where {T} = one(T)
+@inline _ε_factor_d(::RK_H1, ε::T) where {T} = T(2)
+@inline _ε_factor_d(::RK_H2, ε::T) where {T} = T(5)/2
+
 function _estimate_ε(nodes::AbstractVecOfSVecs{n,T}) where {n,T}
     n_1 = length(nodes)
-    ε = _pairwise_sum_norms(nodes)
+    ε   = _pairwise_sum_norms(nodes)
     return ε > 0 ? ε * T(n)^T(inv(n)) / T(n_1)^(T(5) / 3) : one(T)
 end
 
-        function _estimate_ε(nodes::AbstractVecOfSVecs{n,T}, d_nodes::AbstractVecOfSVecs{n,T}, w_d_nodes::T=T(0.1)) where {n,T}
+function _estimate_ε(nodes::AbstractVecOfSVecs{n,T}, d_nodes::AbstractVecOfSVecs{n,T}, w_d_nodes::T=T(0.1)) where {n,T}
     n_1 = length(nodes)
     n_2 = length(d_nodes)
-    ε = _pairwise_sum_norms(nodes) + _pairwise_sum_norms_weighted(nodes, d_nodes, w_d_nodes) + w_d_nodes * _pairwise_sum_norms(d_nodes)
+    ε   = _pairwise_sum_norms(nodes) + _pairwise_sum_norms_weighted(nodes, d_nodes, w_d_nodes) + w_d_nodes * _pairwise_sum_norms(d_nodes)
     return ε > 0 ? ε * T(n)^T(inv(n)) / T(n_1 + n_2)^(T(5) / 3) : one(T)
 end
 
 function _estimate_epsilon(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
-    min_bound, compression = _normalization_scaling(nodes)
-    t_nodes = (x -> (x .- min_bound) ./ compression).(nodes)
-    ε = _estimate_ε(t_nodes)
-    if isa(kernel, RK_H1)
-        ε *= 3 // 2
-    elseif isa(kernel, RK_H2)
-        ε *= 2
-    end
+    min_bound, max_bound, compression = _normalization_scaling(nodes)
+    nodes = _normalize.(nodes, (min_bound,), (max_bound,), compression)
+    ε     = _estimate_ε(nodes)
+    ε    *= _ε_factor(kernel, ε)
     return ε
 end
 
 function _estimate_epsilon(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
-    min_bound, compression = _normalization_scaling(nodes, d_nodes)
-    t_nodes = (x -> (x .- min_bound) ./ compression).(nodes)
-    t_d_nodes = (x -> (x .- min_bound) ./ compression).(d_nodes)
-
-    ε = _estimate_ε(t_nodes, t_d_nodes)
-    if isa(kernel, RK_H1)
-        ε *= 2
-    elseif isa(kernel, RK_H2)
-        ε *= 5 // 2
-    end
-
+    min_bound, max_bound, compression = _normalization_scaling(nodes, d_nodes)
+    nodes   = _normalize.(nodes, (min_bound,), (max_bound,), compression)
+    d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), compression)
+    ε       = _estimate_ε(nodes, d_nodes)
+    ε      *= _ε_factor_d(kernel, ε)
     return ε
 end
 
 function _get_gram(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
-    min_bound, compression = _normalization_scaling(nodes)
-    t_nodes = (x -> (x .- min_bound) ./ compression).(nodes)
-
+    min_bound, max_bound, compression = _normalization_scaling(nodes)
+    nodes  = _normalize.(nodes, (min_bound,), (max_bound,), compression)
     if kernel.ε == 0
-        ε = _estimate_ε(t_nodes)
-        if isa(kernel, RK_H0)
-            kernel = RK_H0(ε)
-        elseif isa(kernel, RK_H1)
-            ε *= 3 // 2
-            kernel = RK_H1(ε)
-        elseif isa(kernel, RK_H2)
-            ε *= 2
-            kernel = RK_H2(ε)
-        else
-            error("incorrect `kernel` type.")
-        end
+        ε  = _estimate_ε(nodes)
+        ε *= _ε_factor(kernel, ε)
+        kernel = typeof(kernel)(ε)
     end
-
-    return _gram!(zeros(T, n_1, n_1), t_nodes, kernel)
+    return _gram!(zeros(T, n_1, n_1), nodes, kernel)
 end
 
 function _get_gram(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, es::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
-    min_bound, compression = _normalization_scaling(nodes, d_nodes)
-    t_nodes = (x -> (x .- min_bound) ./ compression).(nodes)
-    t_d_nodes = (x -> (x .- min_bound) ./ compression).(d_nodes)
-    t_es = es ./ norm.(es)
-
+    min_bound, max_bound, compression = _normalization_scaling(nodes, d_nodes)
+    nodes   = _normalize.(nodes, (min_bound,), (max_bound,), compression)
+    d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), compression)
+    es      = es ./ norm.(es)
     if kernel.ε == 0
-        ε = _estimate_ε(t_nodes, t_d_nodes)
-        if isa(kernel, RK_H1)
-            ε *= 2
-            kernel = RK_H1(ε)
-        elseif isa(kernel, RK_H2)
-            ε *= 5 // 2
-            kernel = RK_H2(ε)
-        else
-            error("incorrect `kernel` type.")
-        end
+        ε   = _estimate_ε(nodes, d_nodes)
+        ε  *= _ε_factor_d(kernel, ε)
+        kernel = typeof(kernel)(ε)
     end
-
-    return _gram!(zeros(T, n_1 + n_2, n_1 + n_2), t_nodes, t_d_nodes, t_es, kernel)
+    return _gram!(zeros(T, n_1 + n_2, n_1 + n_2), nodes, d_nodes, es, kernel)
 end
 
 function _get_cond(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
@@ -161,7 +139,7 @@ function _get_cond(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
     end
     return cond
 end
-    
+
 function _get_cond(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, es::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
     _get_cond(nodes, kernel)
 end
@@ -174,35 +152,37 @@ end
 function _estimate_cond(
         gram::AbstractMatrix{T},
         chol::LinearAlgebra.Cholesky{T,Array{T,2}},
-        nit=3
+        nit = 3,
     ) where {T}
-    mat_norm = norm(gram, 1)
+    normgram = norm(gram, 1)
     n = size(gram, 1)
     x = fill(inv(T(n)), n)
     z = Vector{T}(undef, n)
     gamma = zero(T)
-    for it = 1:nit
+    for _ in 1:nit
         z = ldiv!(z, chol, x)
         gamma = zero(T)
-        for i = 1:n
+        @inbounds for i in 1:n
             gamma += abs(z[i])
             z[i] = sign(z[i])
         end
         z = ldiv!(z, chol, copy(z))
         zx = z ⋅ x
         idx = 1
-        for i = 1:n
+        @inbounds for i in 1:n
             z[i] = abs(z[i])
             if z[i] > z[idx]
                 idx = i
             end
         end
-        if z[idx] <= zx
-            break
+        @inbounds begin
+            if z[idx] <= zx
+                break
+            end
+            x .= 0
+            x[idx] = 1
         end
-        x .= 0
-        x[idx] = 1
     end
-    cond = T(10.0)^floor(log10(mat_norm * gamma))
+    cond = T(10)^floor(log10(normgram * gamma))
     return cond
 end

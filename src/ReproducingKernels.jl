@@ -11,16 +11,14 @@ V(\eta , \xi, \varepsilon) = \exp (-\varepsilon |\xi - \eta|) \, .
 "
 struct RK_H0{T} <: ReproducingKernel_0
     ε::T
-    RK_H0() = new{Float64}(0.0)
-    function RK_H0(ε::T) where T
-        ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
-        new{T}(ε)
-    end
-    function RK_H0(ε::Integer)
-        ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
-        new{Float64}(convert(Float64, ε))
-    end
 end
+function RK_H0(ε)
+    ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
+    ε = float(ε)
+    RK_H0{typeof(ε)}(ε)
+end
+RK_H0() = RK_H0{Float64}(0.0)
+RK_H0{T}() where {T} = RK_H0{T}(zero(T))
 
 @doc raw"
 `struct RK_H1{T} <: ReproducingKernel_1`
@@ -36,16 +34,14 @@ V(\eta , \xi, \varepsilon) = \exp (-\varepsilon |\xi - \eta|)
 "
 struct RK_H1{T} <: ReproducingKernel_1
     ε::T
-    RK_H1() = new{Float64}(0.0)
-    function RK_H1(ε::T) where T
-        ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
-        new{T}(ε)
-    end
-    function RK_H1(ε::Integer)
-        ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
-        new{Float64}(convert(Float64, ε))
-    end
 end
+function RK_H1(ε)
+    ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
+    ε = float(ε)
+    RK_H1{typeof(ε)}(ε)
+end
+RK_H1() = RK_H1{Float64}(0.0)
+RK_H1{T}() where {T} = RK_H1{T}(zero(T))
 
 @doc raw"
 `struct RK_H2{T} <: ReproducingKernel_2`
@@ -61,96 +57,89 @@ V(\eta , \xi, \varepsilon) = \exp (-\varepsilon |\xi - \eta|)
 "
 struct RK_H2{T} <: ReproducingKernel_2
     ε::T
-    RK_H2() = new{Float64}(0.0)
-    function RK_H2(ε::T) where T
-        ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
-        new{T}(ε)
-    end
-    function RK_H2(ε::Integer)
-        ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
-        new{Float64}(convert(Float64, ε))
-    end
 end
+function RK_H2(ε)
+    ε <= 0 && throw(DomainError(ε, "Parameter ε must be a positive number."))
+    ε = float(ε)
+    RK_H2{typeof(ε)}(ε)
+end
+RK_H2() = RK_H2{Float64}(0.0)
+RK_H2{T}() where {T} = RK_H2{T}(zero(T))
 
-@inline function _rk(kernel::RK_H2, η::AbstractVector, ξ::AbstractVector)
-    x = kernel.ε * norm(ξ .- η)
+@inline function _rk(kernel::RK_H2, η::SVector, ξ::SVector)
+    x = kernel.ε * norm(η - ξ)
     return (3 + x * (3 + x)) * exp(-x)
 end
 
-@inline function _rk(kernel::RK_H1, η::AbstractVector, ξ::AbstractVector)
-    x = kernel.ε * norm(ξ .- η)
+@inline function _rk(kernel::RK_H1, η::SVector, ξ::SVector)
+    x = kernel.ε * norm(η - ξ)
     return (1 + x) * exp(-x)
 end
 
-@inline function _rk(kernel::RK_H0, η::AbstractVector, ξ::AbstractVector)
-    x = kernel.ε * norm(ξ .- η)
+@inline function _rk(kernel::RK_H0, η::SVector, ξ::SVector)
+    x = kernel.ε * norm(η - ξ)
     return exp(-x)
 end
 
-@inline function _∂rk_∂e(kernel::RK_H2, η::AbstractVector, ξ::AbstractVector, e::AbstractVector)
-    t = η .- ξ
+@inline function _∂rk_∂e(kernel::RK_H2, η::SVector, ξ::SVector, e::SVector)
+    t = η - ξ
     x = kernel.ε * norm(t)
-    s = sum(t .* e)
-    return kernel.ε^2 * exp(-x) * (1 + x) * s
+    return kernel.ε^2 * exp(-x) * (1 + x) * (t ⋅ e)
 end
 
-@inline function _∂rk_∂e(kernel::RK_H1, η::AbstractVector, ξ::AbstractVector, e::AbstractVector)
-    t = η .- ξ
+@inline function _∂rk_∂e(kernel::RK_H1, η::SVector, ξ::SVector, e::SVector)
+    t = η - ξ
     x = kernel.ε * norm(t)
-    s = sum(t .* e)
-    return kernel.ε^2 * exp(-x) * s
+    return kernel.ε^2 * exp(-x) * (t ⋅ e)
 end
 
-@inline function _∂rk_∂η_k(kernel::RK_H2, η::AbstractVector, ξ::AbstractVector, k::Int)
-    x = kernel.ε * norm(η .- ξ)
+@inline function _∂rk_∂η_k(kernel::RK_H2, η::SVector, ξ::SVector, ::Val{k}) where {k}
+    x = kernel.ε * norm(η - ξ)
     return kernel.ε^2 * exp(-x) * (1 + x) * (ξ[k] - η[k])
 end
 
-@inline function _∂rk_∂η_k(kernel::RK_H1, η::AbstractVector, ξ::AbstractVector, k::Int)
-    x = kernel.ε * norm(η .- ξ)
+@inline function _∂rk_∂η_k(kernel::RK_H1, η::SVector, ξ::SVector, ::Val{k}) where {k}
+    x = kernel.ε * norm(η - ξ)
     return kernel.ε^2 * exp(-x) * (ξ[k] - η[k])
 end
 
-@inline function _∂rk_∂η_k(kernel::RK_H0, η::AbstractVector, ξ::AbstractVector, k::Int)
+@inline function _∂rk_∂η_k(kernel::RK_H0, η::SVector, ξ::SVector, ::Val{k}) where {k}
     # Note: Derivative of spline built with reproducing kernel RK_H0 does not exist at the spline nodes
     normt = norm(η - ξ)
     x = kernel.ε * normt
-    return normt < sqrt(eps(typeof(x))) ?
-        kernel.ε * exp(-x) * sign(ξ[k] - η[k]) :
-        kernel.ε * exp(-x) * (ξ[k] - η[k]) / normt
+    ∇ = kernel.ε * exp(-x)
+    return normt < sqrt(eps(typeof(x))) ? ∇ * sign(ξ[k] - η[k]) : ∇ * (ξ[k] - η[k]) / normt
 end
 
-@inline function _∂²rk_∂η_r_∂ξ_k(kernel::RK_H2, η::AbstractVector, ξ::AbstractVector, r::Int, k::Int)
-    x = kernel.ε * norm(η .- ξ)
+@generated function _∂rk_∂η(kernel::RK, η::SVector{n}, ξ::SVector{n}) where {n, RK <: ReproducingKernel_0}
+    vals = [:(_∂rk_∂η_k(kernel, η, ξ, Val($k))) for k in 1:n]
+    :(Base.@_inline_meta; SVector{$n}(tuple($(vals...))))
+end
+
+@inline function _∂²rk_∂η_r_∂ξ_k(kernel::RK_H2, η::SVector, ξ::SVector, ::Val{r}, ::Val{k}) where {r,k}
+    ε  = kernel.ε
+    ε² = ε * ε
+    x  = ε * norm(η - ξ)
     if r == k
-        if x > 0
-            kernel.ε^2 * exp(-x) * (1 + x - (kernel.ε * (ξ[r] - η[r]))^2)
-        else
-            kernel.ε^2
-        end
+        ε² * ifelse(x <= 0, one(x), exp(-x) * (1 + x - (ε * (ξ[r] - η[r]))^2))
     else
-        if x > 0
-            -kernel.ε^4 * exp(-x) * (ξ[r] - η[r]) * (ξ[k] - η[k])
-        else
-            zero(x)
-        end
+        ifelse(x <= 0, zero(x), -ε² * ε² * exp(-x) * (ξ[r] - η[r]) * (ξ[k] - η[k]))
     end
 end
 
-@inline function _∂²rk_∂η_r_∂ξ_k(kernel::RK_H1, η::AbstractVector, ξ::AbstractVector, r::Int, k::Int)
-    t = norm(η .- ξ)
-    x = kernel.ε * t
+@inline function _∂²rk_∂η_r_∂ξ_k(kernel::RK_H1, η::SVector, ξ::SVector, ::Val{r}, ::Val{k}) where {r,k}
+    ε  = kernel.ε
+    ε² = ε * ε
+    t  = norm(η - ξ)
+    x  = ε * t
     if r == k
-        if t > 0
-            kernel.ε^2 * exp(-x) * (1 - kernel.ε * (ξ[r] - η[r])^2 / t)
-        else
-            kernel.ε^2
-        end
+        ifelse(t <= 0, ε², ε² * exp(-x) * (1 - ε * (ξ[r] - η[r])^2 / t))
     else
-        if t > 0
-            -kernel.ε^3 * exp(-x) * (ξ[r] - η[r]) * (ξ[k] - η[k]) / t
-        else
-            zero(x)
-        end
+        ifelse(t <= 0, zero(x), -ε * ε² * exp(-x) * (ξ[r] - η[r]) * (ξ[k] - η[k]) / t)
     end
+end
+
+@generated function _∂²rk_∂η∂ξ(kernel::RK, η::SVector{n}, ξ::SVector{n}) where {n, RK <: ReproducingKernel_1}
+    vals = [:(_∂²rk_∂η_r_∂ξ_k(kernel, η, ξ, Val($r), Val($k))) for r in 1:n, k in 1:n]
+    :(Base.@_inline_meta; SMatrix{$n,$n}(tuple($(vals...))))
 end
