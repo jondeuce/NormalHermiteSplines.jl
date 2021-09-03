@@ -126,5 +126,5 @@ end
     ε²e⁻ˣ = ε² * exp(-x)
     S     = SMatrix{n,n,typeof(x)}
     ∇²    = S(ε²e⁻ˣ * I)
-    ∇²   -= ifelse(tnrm <= 0, zeros(S), (ε * ε²e⁻ˣ / tnrm) * (t * t'))
+    ∇²   -= ifelse(x > eps(typeof(x)), (ε * ε²e⁻ˣ / tnrm) * (t * t'), zeros(S))
 end
