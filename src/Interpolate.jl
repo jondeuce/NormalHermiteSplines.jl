@@ -1,133 +1,98 @@
-function _prepare(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
+function _prepare(nodes::AbstractVecOfSVecs{n,T}, kernel::ReproducingKernel_0) where {n,T}
     min_bound, max_bound, scale = _normalization_scaling(nodes)
     nodes = _normalize.(nodes, (min_bound,), (max_bound,), scale)
 
     if kernel.ε == 0
-        ε  = _estimate_ε(nodes)
-        ε *= _ε_factor(kernel, ε)
-        kernel = typeof(kernel)(ε)
+        kernel = _estimate_ε(kernel, nodes)
     end
 
-    gram = _gram(nodes, kernel)
-    chol = cholesky(gram)
-    cond = _estimate_cond(gram, chol)
+    values   = zeros(T, 0)
+    d_nodes  = zeros(SVector{n,T}, 0)
+    d_dirs   = zeros(SVector{n,T}, 0)
+    d_values = zeros(T, 0)
+    mu       = zeros(T, 0)
+    gram     = _gram(nodes, kernel)
+    chol     = cholesky(gram)
+    cond     = _estimate_cond(gram, chol)
 
-    return NormalSpline(
-        kernel,
-        nodes,
-        nothing,
-        nothing,
-        nothing,
-        nothing,
-        nothing,
-        gram,
-        chol,
-        cond,
-        min_bound,
-        max_bound,
-        scale,
-    )
+    return NormalSpline(kernel, nodes, values, d_nodes, d_dirs, d_values, mu, gram, chol, cond, min_bound, max_bound, scale)
 end
 
-function _construct(
+function _construct!(
         spline::NormalSpline{n,T,RK},
         values::AbstractVector{T},
     ) where {n,T,RK <: ReproducingKernel_0}
-    length(values) != length(spline._nodes) && error("Number of data values does not correspond to the number of nodes.")
-    isnothing(spline._chol) && error("Gram matrix was not factorized.")
+    n₁ = length(values)
+    length(spline._nodes) != n₁ && error("Number of data values ($n₁) does not correspond to the number of nodes $(length(spline._nodes)).")
+    size(spline._chol) != (n₁, n₁) && error("Number of data values ($n₁) does not correspond to the size of the Gram matrix ($(size(spline._chol))).")
+
+    # Resize buffers
+    resize!(spline._values, n₁)
+    empty!(spline._d_nodes)
+    empty!(spline._d_dirs)
+    empty!(spline._d_values)
+    resize!(spline._mu, n₁)
 
     # Copy values to avoid aliasing
-    values = copy(values)
+    spline._values .= values
 
-    # Compute spline coefficients and construct spline
-    mu = spline._chol \ values
+    # Compute spline coefficients
+    ldiv!(spline._mu, spline._chol, spline._values)
 
-    return NormalSpline(
-        spline._kernel,
-        spline._nodes,
-        values,
-        nothing,
-        nothing,
-        nothing,
-        mu,
-        spline._gram,
-        spline._chol,
-        spline._cond,
-        spline._min_bound,
-        spline._max_bound,
-        spline._scale,
-    )
+    return spline
 end
 
 ###################
 
-function _prepare(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, es::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
+function _prepare(nodes::AbstractVecOfSVecs{n,T}, d_nodes::AbstractVecOfSVecs{n,T}, d_dirs::AbstractVecOfSVecs{n,T}, kernel::ReproducingKernel_1) where {n,T}
     # Normalize inputs, making copies in the process to avoid aliasing
     min_bound, max_bound, scale = _normalization_scaling(nodes, d_nodes)
-    nodes = _normalize.(nodes, (min_bound,), (max_bound,), scale)
+    nodes   = _normalize.(nodes, (min_bound,), (max_bound,), scale)
     d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), scale)
-    es = es ./ norm.(es)
+    d_dirs  = d_dirs ./ norm.(d_dirs)
 
     if kernel.ε == 0
-        ε = _estimate_ε(nodes, d_nodes)
-        ε *= _ε_factor_d(kernel, ε)
-        kernel = typeof(kernel)(ε)
+        kernel = _estimate_ε(kernel, nodes, d_nodes)
     end
 
-    gram = _gram(nodes, d_nodes, es, kernel)
-    chol = cholesky(gram)
-    cond = _estimate_cond(gram, chol)
+    values   = zeros(T, 0)
+    d_values = zeros(T, 0)
+    mu       = zeros(T, 0)
+    gram     = _gram(nodes, d_nodes, d_dirs, kernel)
+    chol     = cholesky(gram)
+    cond     = _estimate_cond(gram, chol)
 
-    return NormalSpline(
-        kernel,
-        nodes,
-        nothing,
-        d_nodes,
-        es,
-        nothing,
-        nothing,
-        gram,
-        chol,
-        cond,
-        min_bound,
-        max_bound,
-        scale,
-    )
+    return NormalSpline(kernel, nodes, values, d_nodes, d_dirs, d_values, mu, gram, chol, cond, min_bound, max_bound, scale)
 end
 
-function _construct(
+function _construct!(
         spline::NormalSpline{n,T,RK},
         values::AbstractVector{T},
         d_values::AbstractVector{T},
     ) where {n,T,RK <: ReproducingKernel_0}
-    length(values) != length(spline._nodes) && error("Number of data values does not correspond to the number of nodes.")
-    length(d_values) != length(spline._d_nodes) && error("Number of derivative values does not correspond to the number of derivative nodes.")
-    isnothing(spline._chol) && error("Gram matrix was not factorized.")
+    n₁ = length(values)
+    n₂ = length(d_values)
+    length(spline._nodes) != n₁ && error("Number of data values ($n₁) does not correspond to the number of nodes $(length(spline._nodes)).")
+    length(spline._d_nodes) != n₂ && error("Number of derivative values ($n₂) does not correspond to the number of derivative nodes.")
+    size(spline._chol) != (n₁+n₂, n₁+n₂) && error("Number of data and derivative values ($(n₁+n₂)) do not correspond to the size of the Gram matrix ($(size(spline._chol))).")
+
+    # Resize buffers
+    resize!(spline._values, n₁)
+    resize!(spline._d_nodes, n₂)
+    resize!(spline._d_dirs, n₂)
+    resize!(spline._d_values, n₂)
+    resize!(spline._mu, n₁+n₂)
 
     # Copy values to avoid aliasing
-    values = copy(values)
+    spline._values .= values
 
     # Nodes scaled down by `_scale` -> directional derivative scaled up by `_scale`; allocate new array to avoid aliasing
-    d_values = spline._scale .* d_values
+    spline._d_values .= spline._scale .* d_values
 
     # Compute spline coefficients and construct spline
-    mu = spline._chol \ [values; d_values]
+    ldiv!(spline._mu, spline._chol, [spline._values; spline._d_values])
 
-    return NormalSpline(
-        spline._kernel,
-        spline._nodes,
-        values,
-        spline._d_nodes,
-        spline._es,
-        d_values,
-        mu,
-        spline._gram,
-        spline._chol,
-        spline._cond,
-        spline._min_bound,
-        spline._max_bound,
-        spline._scale,
-    )
+    return spline
 end
 
 @inline function _evaluate!(
@@ -142,91 +107,42 @@ end
 end
 
 @inline function _evaluate(
-        spline::NormalSpline{n, <:Any, <:ReproducingKernel_0},
-        point::SVector{n},
-    ) where {n}
-    point = _normalize(spline, point)
-    if isnothing(spline._d_nodes)
-        _evaluate(point, spline._nodes, spline._mu, spline._kernel)
-    else
-        _evaluate(point, spline._nodes, spline._d_nodes, spline._es, spline._mu, spline._kernel)
+        spline::NormalSpline{n, T, RK},
+        x::SVector{n},
+    ) where {n, T, RK <: ReproducingKernel_0}
+    @unpack _kernel, _nodes, _d_nodes, _d_dirs, _mu = spline
+    n₁ = length(_nodes)
+    n₂ = length(_d_nodes)
+    x  = _normalize(spline, x)
+    v  = zero(promote_type(T, eltype(_kernel), eltype(x)))
+    @inbounds for i in 1:n₁
+        v += _mu[i] * _rk(_kernel, x, _nodes[i])
     end
-end
-
-@inline function _evaluate(
-        point::SVector,
-        nodes::AbstractVecOfSVecs,
-        mu::AbstractVector,
-        kernel::ReproducingKernel_0,
-    )
-    T = promote_type(typeof(kernel.ε), eltype(point), eltype(eltype(nodes)), eltype(mu))
-    v = zero(T)
-    @inbounds for i in 1:length(nodes)
-        v += mu[i] * _rk(kernel, point, nodes[i])
-    end
-    return v
-end
-
-@inline function _evaluate(
-        point::SVector,
-        nodes::AbstractVecOfSVecs,
-        d_nodes::AbstractVecOfSVecs,
-        es::AbstractVecOfSVecs,
-        mu::AbstractVector,
-        kernel::ReproducingKernel_1,
-    )
-    n_1 = length(nodes)
-    v = _evaluate(point, nodes, mu, kernel)
-    @inbounds for i in 1:length(d_nodes)
-        v += mu[i+n_1] * _∂rk_∂e(kernel, point, d_nodes[i], es[i])
+    if RK <: ReproducingKernel_1
+        @inbounds for i in 1:n₂
+            v += _mu[i+n₁] * _∂rk_∂e(_kernel, x, _d_nodes[i], _d_dirs[i])
+        end
     end
     return v
 end
 
 @inline function _evaluate_gradient(
-        spline::NormalSpline{n, <:Any, <:ReproducingKernel_0},
-        point::SVector{n},
-    ) where {n}
-    point = _normalize(spline, point)
-    if isnothing(spline._d_nodes)
-        _evaluate_gradient(point, spline._nodes, spline._mu, spline._kernel) ./ spline._scale
-    else
-        _evaluate_gradient(point, spline._nodes, spline._d_nodes, spline._es, spline._mu, spline._kernel) ./ spline._scale
+        spline::NormalSpline{n, T, RK},
+        x::SVector{n},
+    ) where {n, T, RK <:ReproducingKernel_0}
+    @unpack _kernel, _nodes, _d_nodes, _d_dirs, _mu, _scale = spline
+    n₁ = length(_nodes)
+    n₂ = length(_d_nodes)
+    x  = _normalize(spline, x)
+    ∇  = zero(SVector{n,promote_type(T, eltype(_kernel), eltype(x))})
+    @inbounds for i in 1:n₁
+        ∇ += _mu[i] * _∂rk_∂η(_kernel, x, _nodes[i])
     end
-end
-
-@inline function _evaluate_gradient(
-        point::SVector{n},
-        nodes::AbstractVecOfSVecs{n},
-        mu::AbstractVector,
-        kernel::ReproducingKernel_0,
-    ) where {n}
-    T = promote_type(typeof(kernel.ε), eltype(point), eltype(eltype(nodes)), eltype(mu))
-    ∇ = zero(SVector{n,T})
-    @inbounds for i in 1:length(nodes)
-        μ    = mu[i]
-        node = nodes[i]
-        ∇   += μ * _∂rk_∂η(kernel, point, node)
+    if RK <: ReproducingKernel_1
+        @inbounds for i in 1:n₂
+            ∇² = _∂²rk_∂η∂ξ(_kernel, x, _d_nodes[i])
+            ∇ += _mu[i+n₁] * (∇² * _d_dirs[i])
+        end
     end
-    return ∇
-end
-
-@inline function _evaluate_gradient(
-        point::SVector{n},
-        nodes::AbstractVecOfSVecs{n},
-        d_nodes::AbstractVecOfSVecs{n},
-        es::AbstractVecOfSVecs{n},
-        mu::AbstractVector,
-        kernel::ReproducingKernel_1,
-    ) where {n}
-    n_1 = length(nodes)
-    ∇ = _evaluate_gradient(point, nodes, mu, kernel)
-    @inbounds for i in 1:length(d_nodes)
-        μi    = mu[n_1 + i]
-        ∂node = d_nodes[i]
-        êi    = es[i]
-        ∂²rk  = _∂²rk_∂η∂ξ(kernel, point, ∂node)
-        ∇    += μi * (∂²rk * êi)
-    end
-    return ∇
+    return ∇ ./ _scale
 end

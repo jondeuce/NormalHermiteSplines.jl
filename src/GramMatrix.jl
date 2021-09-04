@@ -1,48 +1,55 @@
-function _gram!(A::AbstractMatrix, nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
-    n_1 = length(nodes)
-    @inbounds for j in 1:n_1
-        for i in j:n_1
+function _gram!(
+        A::AbstractMatrix,
+        nodes::AbstractVecOfSVecs,
+        kernel::ReproducingKernel_0,
+    )
+    n₁ = length(nodes)
+    @inbounds for j in 1:n₁
+        for i in j:n₁
             A[i,j] = _rk(kernel, nodes[i], nodes[j])
         end
     end
     return Hermitian(A, :L)
 end
-function _gram(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
-    n_1 = length(nodes)
-    T = eltype(eltype(nodes))
-    _gram!(zeros(T, n_1, n_1), nodes, kernel)
+function _gram(
+        nodes::AbstractVecOfSVecs,
+        kernel::ReproducingKernel_0,
+    )
+    n₁ = length(nodes)
+    T  = eltype(eltype(nodes))
+    _gram!(zeros(T, n₁, n₁), nodes, kernel)
 end
 
 function _gram!(
         A::AbstractMatrix,
         nodes::AbstractVecOfSVecs{n},
         d_nodes::AbstractVecOfSVecs{n},
-        es::AbstractVecOfSVecs{n},
+        d_dirs::AbstractVecOfSVecs{n},
         kernel::ReproducingKernel_1,
     ) where {n}
-    n_1 = length(nodes)
-    n_2 = length(d_nodes)
+    n₁  = length(nodes)
+    n₂  = length(d_nodes)
     A11 = A
-    A21 = uview(A, n_1 + 1 : n_1 + n_2, 1 : n_1)
-    A22 = uview(A, n_1 + 1 : n_1 + n_2, n_1 + 1 : n_1 + n_2)
+    A21 = uview(A, n₁+1 : n₁+n₂, 1 : n₁)
+    A22 = uview(A, n₁+1 : n₁+n₂, n₁+1 : n₁+n₂)
 
-    @inbounds for j in 1:n_1
-        # Top-left block (n_1 x n_1)
-        for i in j:n_1
+    @inbounds for j in 1:n₁
+        # Top-left block (n₁ x n₁)
+        for i in j:n₁
             A11[i,j] = _rk(kernel, nodes[i], nodes[j])
         end
-        # Bottom-left block (n_2 x n_1)
-        for i in 1:n_2
-            A21[i, j] = _∂rk_∂e(kernel, nodes[j], d_nodes[i], es[i])
+        # Bottom-left block (n₂ x n₁)
+        for i in 1:n₂
+            A21[i, j] = _∂rk_∂e(kernel, nodes[j], d_nodes[i], d_dirs[i])
         end
     end
 
-    # Bottom-right block (n_2 x n_2)
+    # Bottom-right block (n₂ x n₂)
     ε² = kernel.ε^2
-    @inbounds for j in 1:n_2
+    @inbounds for j in 1:n₂
         A22[j, j] = ε²
-        for i in j+1:n_2
-            A22[i, j] = es[i] ⋅ (_∂²rk_∂η∂ξ(kernel, d_nodes[j], d_nodes[i]) * es[j])
+        for i in j+1:n₂
+            A22[i, j] = _∂²rk_∂²e(kernel, d_nodes[j], d_nodes[i], d_dirs[j], d_dirs[i])
         end
     end
 
@@ -51,13 +58,13 @@ end
 function _gram(
         nodes::AbstractVecOfSVecs{n},
         d_nodes::AbstractVecOfSVecs{n},
-        es::AbstractVecOfSVecs{n},
+        d_dirs::AbstractVecOfSVecs{n},
         kernel::ReproducingKernel_1,
     ) where {n}
-    n_1 = length(nodes)
-    n_2 = length(d_nodes)
-    T = promote_type(eltype(eltype(nodes)), eltype(eltype(d_nodes)), eltype(eltype(es)))
-    _gram!(zeros(T, n_1 + n_2, n_1 + n_2), nodes, d_nodes, es, kernel)
+    n₁ = length(nodes)
+    n₂ = length(d_nodes)
+    T  = promote_type(eltype(eltype(nodes)), eltype(eltype(d_nodes)), eltype(eltype(d_dirs)))
+    _gram!(zeros(T, n₁+n₂, n₁+n₂), nodes, d_nodes, d_dirs, kernel)
 end
 
 """

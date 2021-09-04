@@ -33,8 +33,8 @@ function _estimate_accuracy(spline::NormalSpline{n,T,RK}) where {n,T,RK <: Repro
     rmae = zero(T)
     @inbounds for i in 1:length(spline._nodes)
         point = _unnormalize(spline, spline._nodes[i])
-        σ = _evaluate(spline, point)
-        rmae = max(rmae, abs(spline._values[i] - σ))
+        σ     = _evaluate(spline, point)
+        rmae  = max(rmae, abs(spline._values[i] - σ))
     end
     if vmax > 0
         rmae /= vmax
@@ -69,17 +69,29 @@ end
 @inline _ε_factor_d(::RK_H1, ε::T) where {T} = T(2)
 @inline _ε_factor_d(::RK_H2, ε::T) where {T} = T(5)/2
 
+function _estimate_ε(k::ReproducingKernel_0, nodes)
+    ε  = _estimate_ε(nodes)
+    ε *= _ε_factor(k, ε)
+    k  = typeof(k)(ε)
+end
+
+function _estimate_ε(k::ReproducingKernel_0, nodes, d_nodes)
+    ε  = _estimate_ε(nodes, d_nodes)
+    ε *= _ε_factor_d(k, ε)
+    k  = typeof(k)(ε)
+end
+
 function _estimate_ε(nodes::AbstractVecOfSVecs{n,T}) where {n,T}
-    n_1 = length(nodes)
-    ε   = _pairwise_sum_norms(nodes)
-    return ε > 0 ? ε * T(n)^T(inv(n)) / T(n_1)^(T(5) / 3) : one(T)
+    n₁ = length(nodes)
+    ε  = _pairwise_sum_norms(nodes)
+    return ε > 0 ? ε * T(n)^T(inv(n)) / T(n₁)^(T(5) / 3) : one(T)
 end
 
 function _estimate_ε(nodes::AbstractVecOfSVecs{n,T}, d_nodes::AbstractVecOfSVecs{n,T}, w_d_nodes::T=T(0.1)) where {n,T}
-    n_1 = length(nodes)
-    n_2 = length(d_nodes)
-    ε   = _pairwise_sum_norms(nodes) + _pairwise_sum_norms_weighted(nodes, d_nodes, w_d_nodes) + w_d_nodes * _pairwise_sum_norms(d_nodes)
-    return ε > 0 ? ε * T(n)^T(inv(n)) / T(n_1 + n_2)^(T(5) / 3) : one(T)
+    n₁ = length(nodes)
+    n₂ = length(d_nodes)
+    ε  = _pairwise_sum_norms(nodes) + _pairwise_sum_norms_weighted(nodes, d_nodes, w_d_nodes) + w_d_nodes * _pairwise_sum_norms(d_nodes)
+    return ε > 0 ? ε * T(n)^T(inv(n)) / T(n₁ + n₂)^(T(5) / 3) : one(T)
 end
 
 function _estimate_epsilon(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
@@ -101,30 +113,26 @@ end
 
 function _get_gram(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
     min_bound, max_bound, scale = _normalization_scaling(nodes)
-    nodes  = _normalize.(nodes, (min_bound,), (max_bound,), scale)
+    nodes = _normalize.(nodes, (min_bound,), (max_bound,), scale)
     if kernel.ε == 0
-        ε  = _estimate_ε(nodes)
-        ε *= _ε_factor(kernel, ε)
-        kernel = typeof(kernel)(ε)
+        kernel = _estimate_ε(kernel, nodes)
     end
     return _gram(nodes, kernel)
 end
 
-function _get_gram(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, es::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
+function _get_gram(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, d_dirs::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
     min_bound, max_bound, scale = _normalization_scaling(nodes, d_nodes)
     nodes   = _normalize.(nodes, (min_bound,), (max_bound,), scale)
     d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), scale)
-    es      = es ./ norm.(es)
+    d_dirs  = d_dirs ./ norm.(d_dirs)
     if kernel.ε == 0
-        ε   = _estimate_ε(nodes, d_nodes)
-        ε  *= _ε_factor_d(kernel, ε)
-        kernel = typeof(kernel)(ε)
+        kernel = _estimate_ε(kernel, nodes, d_nodes)
     end
-    return _gram(nodes, d_nodes, es, kernel)
+    return _gram(nodes, d_nodes, d_dirs, kernel)
 end
 
 function _get_cond(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
-    T = promote_type(typeof(kernel.ε), eltype(eltype(nodes)))
+    T = promote_type(eltype(kernel), eltype(eltype(nodes)))
     gram = _get_gram(nodes, kernel)
     cond = zero(T)
     try
@@ -140,7 +148,7 @@ function _get_cond(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
     return cond
 end
 
-function _get_cond(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, es::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
+function _get_cond(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, d_dirs::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
     _get_cond(nodes, kernel)
 end
 

@@ -15,6 +15,7 @@ struct RK_H0{T} <: ReproducingKernel_0
     RK_H0(ε) = (@assert ε > 0; new{typeof(float(ε))}(float(ε)))
     RK_H0{T}(ε) where {T} = (@assert ε > 0; new{T}(T(ε)))
 end
+Base.eltype(::RK_H0{T}) where {T} = T
 
 @doc raw"
 `struct RK_H1{T} <: ReproducingKernel_1`
@@ -34,6 +35,7 @@ struct RK_H1{T} <: ReproducingKernel_1
     RK_H1(ε) = (@assert ε > 0; new{typeof(float(ε))}(float(ε)))
     RK_H1{T}(ε) where {T} = (@assert ε > 0; new{T}(T(ε)))
 end
+Base.eltype(::RK_H1{T}) where {T} = T
 
 @doc raw"
 `struct RK_H2{T} <: ReproducingKernel_2`
@@ -53,6 +55,7 @@ struct RK_H2{T} <: ReproducingKernel_2
     RK_H2(ε) = (@assert ε > 0; new{typeof(float(ε))}(float(ε)))
     RK_H2{T}(ε) where {T} = (@assert ε > 0; new{T}(T(ε)))
 end
+Base.eltype(::RK_H2{T}) where {T} = T
 
 @inline function _rk(kernel::RK_H2, η::SVector, ξ::SVector)
     x = kernel.ε * norm(η - ξ)
@@ -95,13 +98,37 @@ end
 
 @inline function _∂rk_∂η(kernel::RK_H0, η::SVector, ξ::SVector)
     # Note: Derivative of spline built with reproducing kernel RK_H0 does not exist at the spline nodes
-    t = η - ξ
+    t    = η - ξ
     tnrm = norm(t)
-    x = kernel.ε * tnrm
-    ∇ = kernel.ε * exp(-x)
-    t  = ifelse(x > eps(typeof(x)), t, zeros(t))
-    ∇ *= ifelse(x > eps(typeof(x)), inv(tnrm), one(tnrm))
-    ∇ *= t
+    x    = kernel.ε * tnrm
+    ∇    = kernel.ε * exp(-x)
+    t    = ifelse(x > eps(typeof(x)), t, zeros(t))
+    ∇   *= ifelse(x > eps(typeof(x)), inv(tnrm), one(tnrm))
+    ∇   *= t
+end
+
+@inline function _∂²rk_∂²e(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}, êη::SVector{n}, êξ::SVector{n}) where {n}
+    ε     = kernel.ε
+    ε²    = ε * ε
+    t     = η - ξ
+    tnrm  = norm(t)
+    x     = ε * tnrm
+    ε²e⁻ˣ = ε² * exp(-x)
+    ∇²    = ((1 + x) * ε²e⁻ˣ) * (êξ ⋅ êη)
+    ∇²   -= (ε² * ε²e⁻ˣ) * (êξ ⋅ t) * (t ⋅ êη)
+end
+
+@inline function _∂²rk_∂²e(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}, êη::SVector{n}, êξ::SVector{n}) where {n}
+    # Note: Second derivative of spline built with reproducing kernel RK_H1 does not exist at the spline nodes
+    ε     = kernel.ε
+    ε²    = ε * ε
+    t     = η - ξ
+    tnrm  = norm(t)
+    x     = ε * tnrm
+    ε²e⁻ˣ = ε² * exp(-x)
+    S     = SMatrix{n,n,typeof(x)}
+    ∇²    = ε²e⁻ˣ * (êξ ⋅ êη)
+    ∇²   -= ifelse(x > eps(typeof(x)), (ε * ε²e⁻ˣ / tnrm) * (êξ ⋅ t) * (t ⋅ êη), zero(∇²))
 end
 
 @inline function _∂²rk_∂η∂ξ(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}) where {n}
@@ -112,8 +139,8 @@ end
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
     S     = SMatrix{n,n,typeof(x)}
-    ∇²    = S((1 + x) * ε²e⁻ˣ * I)
-    ∇²   -= (ε² * ε²e⁻ˣ) * (t * t')
+    ∇²    = S(((1 + x) * ε²e⁻ˣ) * I)
+    ∇²   -= ((ε² * ε²e⁻ˣ) * t) * t'
 end
 
 @inline function _∂²rk_∂η∂ξ(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}) where {n}
@@ -126,5 +153,5 @@ end
     ε²e⁻ˣ = ε² * exp(-x)
     S     = SMatrix{n,n,typeof(x)}
     ∇²    = S(ε²e⁻ˣ * I)
-    ∇²   -= ifelse(x > eps(typeof(x)), (ε * ε²e⁻ˣ / tnrm) * (t * t'), zeros(S))
+    ∇²   -= ifelse(x > eps(typeof(x)), ((ε * ε²e⁻ˣ / tnrm) * t) * t', zeros(S))
 end
