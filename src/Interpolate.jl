@@ -1,6 +1,6 @@
 function _prepare(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
-    min_bound, max_bound, compression = _normalization_scaling(nodes)
-    nodes = _normalize.(nodes, (min_bound,), (max_bound,), compression)
+    min_bound, max_bound, scale = _normalization_scaling(nodes)
+    nodes = _normalize.(nodes, (min_bound,), (max_bound,), scale)
 
     if kernel.ε == 0
         ε  = _estimate_ε(nodes)
@@ -8,73 +8,64 @@ function _prepare(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
         kernel = typeof(kernel)(ε)
     end
 
-    T = eltype(eltype(nodes))
-    n_1 = length(nodes)
-    gram = _gram!(zeros(T, n_1, n_1), nodes, kernel)
-    chol = nothing
-    try
-        chol = cholesky(gram)
-    catch
-        error("Cannot prepare the spline: Gram matrix is degenerate.")
-    end
-
+    gram = _gram(nodes, kernel)
+    chol = cholesky(gram)
     cond = _estimate_cond(gram, chol)
 
-    spline = NormalSpline(kernel,
-                          nodes,
-                          nothing,
-                          nothing,
-                          nothing,
-                          nothing,
-                          min_bound,
-                          max_bound,
-                          compression,
-                          gram,
-                          chol,
-                          nothing,
-                          cond,
-                          )
-    return spline
+    return NormalSpline(
+        kernel,
+        nodes,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+        gram,
+        chol,
+        cond,
+        min_bound,
+        max_bound,
+        scale,
+    )
 end
 
-function _construct(spline::NormalSpline{n,T,RK},
-                    values::AbstractVector{T},
-                    cleanup::Bool=false
-                   ) where {n,T,RK <: ReproducingKernel_0}
-    if length(values) != length(spline._nodes)
-        error("Number of data values does not correspond to the number of nodes.")
-    end
-    if isnothing(spline._chol)
-        error("Gram matrix was not factorized.")
-    end
+function _construct(
+        spline::NormalSpline{n,T,RK},
+        values::AbstractVector{T},
+    ) where {n,T,RK <: ReproducingKernel_0}
+    length(values) != length(spline._nodes) && error("Number of data values does not correspond to the number of nodes.")
+    isnothing(spline._chol) && error("Gram matrix was not factorized.")
 
-    mu = Vector{T}(undef, size(spline._gram, 1))
-    ldiv!(mu, spline._chol, values)
+    # Copy values to avoid aliasing
+    values = copy(values)
 
-    spline = NormalSpline(spline._kernel,
-                          spline._nodes,
-                          values,
-                          nothing,
-                          nothing,
-                          nothing,
-                          spline._min_bound,
-                          spline._max_bound,
-                          spline._compression,
-                          cleanup ? nothing : spline._gram,
-                          cleanup ? nothing : spline._chol,
-                          mu,
-                          spline._cond,
-                          )
-    return spline
+    # Compute spline coefficients and construct spline
+    mu = spline._chol \ values
+
+    return NormalSpline(
+        spline._kernel,
+        spline._nodes,
+        values,
+        nothing,
+        nothing,
+        nothing,
+        mu,
+        spline._gram,
+        spline._chol,
+        spline._cond,
+        spline._min_bound,
+        spline._max_bound,
+        spline._scale,
+    )
 end
 
 ###################
 
 function _prepare(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, es::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
     # Normalize inputs, making copies in the process to avoid aliasing
-    min_bound, max_bound, compression = _normalization_scaling(nodes, d_nodes)
-    nodes = _normalize.(nodes, (min_bound,), (max_bound,), compression)
-    d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), compression)
+    min_bound, max_bound, scale = _normalization_scaling(nodes, d_nodes)
+    nodes = _normalize.(nodes, (min_bound,), (max_bound,), scale)
+    d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), scale)
     es = es ./ norm.(es)
 
     if kernel.ε == 0
@@ -83,69 +74,60 @@ function _prepare(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, es::Ab
         kernel = typeof(kernel)(ε)
     end
 
-    n_1 = length(nodes)
-    n_2 = length(d_nodes)
-    T = promote_type(eltype(eltype(nodes)), eltype(eltype(d_nodes)), eltype(eltype(es)))
-    gram = _gram!(zeros(T, n_1 + n_2, n_1 + n_2), nodes, d_nodes, es, kernel)
-    chol = nothing
-    try
-        chol = cholesky(gram)
-    catch
-        error("Cannot prepare the spline: Gram matrix is degenerate.")
-    end
-
+    gram = _gram(nodes, d_nodes, es, kernel)
+    chol = cholesky(gram)
     cond = _estimate_cond(gram, chol)
 
-    spline = NormalSpline(kernel,
-                          nodes,
-                          nothing,
-                          d_nodes,
-                          es,
-                          nothing,
-                          min_bound,
-                          max_bound,
-                          compression,
-                          gram,
-                          chol,
-                          nothing,
-                          cond,
-                          )
-    return spline
+    return NormalSpline(
+        kernel,
+        nodes,
+        nothing,
+        d_nodes,
+        es,
+        nothing,
+        nothing,
+        gram,
+        chol,
+        cond,
+        min_bound,
+        max_bound,
+        scale,
+    )
 end
 
-function _construct(spline::NormalSpline{n,T,RK},
-                    values::AbstractVector{T},
-                    d_values::AbstractVector{T},
-                    cleanup::Bool=false
-                   ) where {n,T,RK <: ReproducingKernel_0}
-    if length(values) != length(spline._nodes)
-        error("Number of data values does not correspond to the number of nodes.")
-    end
-    if length(d_values) != length(spline._d_nodes)
-        error("Number of derivative values does not correspond to the number of derivative nodes.")
-    end
-    if isnothing(spline._chol)
-        error("Gram matrix was not factorized.")
-    end
+function _construct(
+        spline::NormalSpline{n,T,RK},
+        values::AbstractVector{T},
+        d_values::AbstractVector{T},
+    ) where {n,T,RK <: ReproducingKernel_0}
+    length(values) != length(spline._nodes) && error("Number of data values does not correspond to the number of nodes.")
+    length(d_values) != length(spline._d_nodes) && error("Number of derivative values does not correspond to the number of derivative nodes.")
+    isnothing(spline._chol) && error("Gram matrix was not factorized.")
 
-    mu = Vector{T}(undef, size(spline._gram, 1))
-    ldiv!(mu, spline._chol, [values; spline._compression .* d_values])
+    # Copy values to avoid aliasing
+    values = copy(values)
 
-    spline = NormalSpline(spline._kernel,
-                          spline._nodes,
-                          values,
-                          spline._d_nodes,
-                          spline._es,
-                          d_values,
-                          spline._min_bound,
-                          spline._max_bound,
-                          spline._compression,
-                          cleanup ? nothing : spline._gram,
-                          cleanup ? nothing : spline._chol,
-                          mu,
-                          spline._cond,
-                          )
-    return spline
+    # Nodes scaled down by `_scale` -> directional derivative scaled up by `_scale`; allocate new array to avoid aliasing
+    d_values = spline._scale .* d_values
+
+    # Compute spline coefficients and construct spline
+    mu = spline._chol \ [values; d_values]
+
+    return NormalSpline(
+        spline._kernel,
+        spline._nodes,
+        values,
+        spline._d_nodes,
+        spline._es,
+        d_values,
+        mu,
+        spline._gram,
+        spline._chol,
+        spline._cond,
+        spline._min_bound,
+        spline._max_bound,
+        spline._scale,
+    )
 end
 
 @inline function _evaluate!(
@@ -207,9 +189,9 @@ end
     ) where {n}
     point = _normalize(spline, point)
     if isnothing(spline._d_nodes)
-        _evaluate_gradient(point, spline._nodes, spline._mu, spline._kernel) ./ spline._compression
+        _evaluate_gradient(point, spline._nodes, spline._mu, spline._kernel) ./ spline._scale
     else
-        _evaluate_gradient(point, spline._nodes, spline._d_nodes, spline._es, spline._mu, spline._kernel) ./ spline._compression
+        _evaluate_gradient(point, spline._nodes, spline._d_nodes, spline._es, spline._mu, spline._kernel) ./ spline._scale
     end
 end
 

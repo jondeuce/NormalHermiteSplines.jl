@@ -10,6 +10,7 @@ export evaluate_derivative
 
 using LinearAlgebra
 using StaticArrays
+using UnsafeArrays
 
 abstract type ReproducingKernel end
 abstract type ReproducingKernel_0 <: ReproducingKernel end
@@ -20,6 +21,7 @@ abstract type AbstractSpline end
 
 const AbstractVecOfSVecs{n,T} = AbstractVector{SVector{n,T}}
 const VecOfSVecs{n,T} = Vector{SVector{n,T}}
+const Maybe{T} = Union{Nothing, T}
 
 @inline svectors(x::AbstractMatrix{T}) where {T} = reinterpret(reshape, SVector{size(x,1),T}, x)
 @inline svectors(x::AbstractVector{T}) where {T} = reinterpret(SVector{1,T}, x)
@@ -30,7 +32,7 @@ const VecOfSVecs{n,T} = Vector{SVector{n,T}}
 Define a structure containing full information of a normal spline
 # Fields
 - `_kernel`: a reproducing kernel spline was built with
-- `_compression`: factor of transforming the original node locations into unit hypercube
+- `_scale`: factor of transforming the original node locations into unit hypercube
 - `_nodes`: transformed function value nodes
 - `_values`: function values at interpolation nodes
 - `_d_nodes`: transformed function directional derivative nodes
@@ -44,18 +46,18 @@ Define a structure containing full information of a normal spline
 "
 struct NormalSpline{n, T, RK} <: AbstractSpline where {n, T <: Real, RK <: ReproducingKernel_0}
     _kernel::RK
-    _nodes::Union{VecOfSVecs{n,T}, Nothing}
-    _values::Union{Vector{T}, Nothing}
-    _d_nodes::Union{VecOfSVecs{n,T}, Nothing}
-    _es::Union{VecOfSVecs{n,T}, Nothing}
-    _d_values::Union{Vector{T}, Nothing}
+    _nodes::VecOfSVecs{n,T}
+    _values::Maybe{Vector{T}}
+    _d_nodes::Maybe{VecOfSVecs{n,T}}
+    _es::Maybe{VecOfSVecs{n,T}}
+    _d_values::Maybe{Vector{T}}
+    _mu::Maybe{Vector{T}}
+    _gram::Hermitian{T, Matrix{T}}
+    _chol::Cholesky{T, Matrix{T}}
+    _cond::T
     _min_bound::SVector{n,T}
     _max_bound::SVector{n,T}
-    _compression::T
-    _gram::Union{Matrix{T}, Nothing}
-    _chol::Union{Cholesky{T, Matrix{T}}, Nothing}
-    _mu::Union{Vector{T}, Nothing}
-    _cond::T
+    _scale::T
 end
 
 include("./ReproducingKernels.jl")

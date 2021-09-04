@@ -1,31 +1,31 @@
-@inbounds function _normalize(point::SVector{n}, min_bound::SVector{n}, max_bound::SVector{n}, compression::Real) where {n}
-    return (point .- min_bound) ./ compression
-    # return clamp.((point .- min_bound) ./ compression, 0, 1) #TODO: clamp nodes? roughly equivalent to nearest neighbour extrapolation
+@inbounds function _normalize(point::SVector{n}, min_bound::SVector{n}, max_bound::SVector{n}, scale::Real) where {n}
+    return (point .- min_bound) ./ scale
+    # return clamp.((point .- min_bound) ./ scale, 0, 1) #TODO: clamp nodes? roughly equivalent to nearest neighbour extrapolation
 end
 @inbounds function _normalize(spline::NormalSpline{n}, point::SVector{n}) where {n}
-    return _normalize(point, spline._min_bound, spline._max_bound, spline._compression)
+    return _normalize(point, spline._min_bound, spline._max_bound, spline._scale)
 end
 
-@inbounds function _unnormalize(point::SVector{n}, min_bound::SVector{n}, max_bound::SVector{n}, compression::Real) where {n}
-    return min_bound .+ compression .* point
-    # return clamp.(min_bound .+ compression .* point, min_bound, max_bound) #TODO: clamp nodes? roughly equivalent to nearest neighbour extrapolation
+@inbounds function _unnormalize(point::SVector{n}, min_bound::SVector{n}, max_bound::SVector{n}, scale::Real) where {n}
+    return min_bound .+ scale .* point
+    # return clamp.(min_bound .+ scale .* point, min_bound, max_bound) #TODO: clamp nodes? roughly equivalent to nearest neighbour extrapolation
 end
 @inbounds function _unnormalize(spline::NormalSpline{n}, point::SVector{n}) where {n}
-    return _unnormalize(point, spline._min_bound, spline._max_bound, spline._compression)
+    return _unnormalize(point, spline._min_bound, spline._max_bound, spline._scale)
 end
 
 function _normalization_scaling(nodes::AbstractVecOfSVecs)
     min_bound = reduce((x, y) -> min.(x, y), nodes)
     max_bound = reduce((x, y) -> max.(x, y), nodes)
-    compression = maximum(max_bound .- min_bound)
-    return min_bound, max_bound, compression
+    scale = maximum(max_bound .- min_bound)
+    return min_bound, max_bound, scale
 end
 
 function _normalization_scaling(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs)
     min_bound = min.(reduce((x, y) -> min.(x, y), nodes), reduce((x, y) -> min.(x, y), d_nodes))
     max_bound = max.(reduce((x, y) -> max.(x, y), nodes), reduce((x, y) -> max.(x, y), d_nodes))
-    compression = maximum(max_bound .- min_bound)
-    return min_bound, max_bound, compression
+    scale = maximum(max_bound .- min_bound)
+    return min_bound, max_bound, scale
 end
 
 function _estimate_accuracy(spline::NormalSpline{n,T,RK}) where {n,T,RK <: ReproducingKernel_0}
@@ -83,44 +83,44 @@ function _estimate_ε(nodes::AbstractVecOfSVecs{n,T}, d_nodes::AbstractVecOfSVec
 end
 
 function _estimate_epsilon(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
-    min_bound, max_bound, compression = _normalization_scaling(nodes)
-    nodes = _normalize.(nodes, (min_bound,), (max_bound,), compression)
+    min_bound, max_bound, scale = _normalization_scaling(nodes)
+    nodes = _normalize.(nodes, (min_bound,), (max_bound,), scale)
     ε     = _estimate_ε(nodes)
     ε    *= _ε_factor(kernel, ε)
     return ε
 end
 
 function _estimate_epsilon(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
-    min_bound, max_bound, compression = _normalization_scaling(nodes, d_nodes)
-    nodes   = _normalize.(nodes, (min_bound,), (max_bound,), compression)
-    d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), compression)
+    min_bound, max_bound, scale = _normalization_scaling(nodes, d_nodes)
+    nodes   = _normalize.(nodes, (min_bound,), (max_bound,), scale)
+    d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), scale)
     ε       = _estimate_ε(nodes, d_nodes)
     ε      *= _ε_factor_d(kernel, ε)
     return ε
 end
 
 function _get_gram(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
-    min_bound, max_bound, compression = _normalization_scaling(nodes)
-    nodes  = _normalize.(nodes, (min_bound,), (max_bound,), compression)
+    min_bound, max_bound, scale = _normalization_scaling(nodes)
+    nodes  = _normalize.(nodes, (min_bound,), (max_bound,), scale)
     if kernel.ε == 0
         ε  = _estimate_ε(nodes)
         ε *= _ε_factor(kernel, ε)
         kernel = typeof(kernel)(ε)
     end
-    return _gram!(zeros(T, n_1, n_1), nodes, kernel)
+    return _gram(nodes, kernel)
 end
 
 function _get_gram(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, es::AbstractVecOfSVecs, kernel::ReproducingKernel_1)
-    min_bound, max_bound, compression = _normalization_scaling(nodes, d_nodes)
-    nodes   = _normalize.(nodes, (min_bound,), (max_bound,), compression)
-    d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), compression)
+    min_bound, max_bound, scale = _normalization_scaling(nodes, d_nodes)
+    nodes   = _normalize.(nodes, (min_bound,), (max_bound,), scale)
+    d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), scale)
     es      = es ./ norm.(es)
     if kernel.ε == 0
         ε   = _estimate_ε(nodes, d_nodes)
         ε  *= _ε_factor_d(kernel, ε)
         kernel = typeof(kernel)(ε)
     end
-    return _gram!(zeros(T, n_1 + n_2, n_1 + n_2), nodes, d_nodes, es, kernel)
+    return _gram(nodes, d_nodes, es, kernel)
 end
 
 function _get_cond(nodes::AbstractVecOfSVecs, kernel::ReproducingKernel_0)
