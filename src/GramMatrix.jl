@@ -40,7 +40,7 @@ function _gram!(
         end
         # Bottom-left block (n₂ x n₁)
         for i in 1:n₂
-            A21[i, j] = _∂rk_∂e(kernel, nodes[j], d_nodes[i], d_dirs[i])
+            A21[i,j] = _∂rk_∂e(kernel, nodes[j], d_nodes[i], d_dirs[i])
         end
     end
 
@@ -49,7 +49,7 @@ function _gram!(
     @inbounds for j in 1:n₂
         A22[j, j] = ε²
         for i in j+1:n₂
-            A22[i, j] = _∂²rk_∂²e(kernel, d_nodes[j], d_nodes[i], d_dirs[j], d_dirs[i])
+            A22[i,j] = _∂²rk_∂²e(kernel, d_nodes[j], d_nodes[i], d_dirs[j], d_dirs[i])
         end
     end
 

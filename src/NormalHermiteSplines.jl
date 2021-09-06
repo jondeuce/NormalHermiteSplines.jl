@@ -20,6 +20,7 @@ abstract type ReproducingKernel_2 <: ReproducingKernel_1 end
 
 abstract type AbstractSpline end
 
+const AbstractArrOfSVecs{n,T,N} = AbstractArray{SVector{n,T},N}
 const AbstractVecOfSVecs{n,T} = AbstractVector{SVector{n,T}}
 const VecOfSVecs{n,T} = Vector{SVector{n,T}}
 
@@ -59,6 +60,7 @@ struct NormalSpline{n, T, RK} <: AbstractSpline where {n, T <: Real, RK <: Repro
     _max_bound::SVector{n,T}
     _scale::T
 end
+Base.eltype(::NormalSpline{n,T,RK}) where {n,T,RK} = T
 
 include("./ReproducingKernels.jl")
 include("./GramMatrix.jl")
@@ -148,10 +150,10 @@ Return: `Vector{T}` of the spline values at the locations defined in `points`.
 @inline function evaluate(spline::NormalSpline{n,T,RK}, points::AbstractMatrix{T}) where {n, T <: Real, RK <: ReproducingKernel_0}
     return evaluate(spline, svectors(points))
 end
-@inline function evaluate(spline::NormalSpline{n,T,RK}, points::AbstractVecOfSVecs{n,T}) where {n, T <: Real, RK <: ReproducingKernel_0}
-    return evaluate!(zeros(T, length(points)), spline, points)
+@inline function evaluate(spline::NormalSpline{n,T,RK}, points::AbstractArrOfSVecs{n,T}) where {n, T <: Real, RK <: ReproducingKernel_0}
+    return evaluate!(zeros(T, size(points)), spline, points)
 end
-@inline function evaluate!(spline_values::AbstractVector{T}, spline::NormalSpline{n,T,RK}, points::AbstractVecOfSVecs{n,T}) where {n, T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate!(spline_values::AbstractArray{T,N}, spline::NormalSpline{n,T,RK}, points::AbstractArrOfSVecs{n,T,N}) where {n, T <: Real, N, RK <: ReproducingKernel_0}
     return _evaluate!(spline_values, spline, points)
 end
 

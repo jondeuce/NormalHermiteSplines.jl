@@ -1,4 +1,5 @@
 function _prepare(nodes::AbstractVecOfSVecs{n,T}, kernel::ReproducingKernel_0) where {n,T}
+    # Normalize nodes out-of-place to avoid aliasing
     min_bound, max_bound, scale = _normalization_scaling(nodes)
     nodes = _normalize.(nodes, (min_bound,), (max_bound,), scale)
 
@@ -21,7 +22,7 @@ end
 function _construct!(
         spline::NormalSpline{n,T,RK},
         values::AbstractVector{T},
-    ) where {n,T,RK <: ReproducingKernel_0}
+    ) where {n, T, RK <: ReproducingKernel_0}
     n₁ = length(values)
     length(spline._nodes) != n₁ && error("Number of data values ($n₁) does not correspond to the number of nodes $(length(spline._nodes)).")
     size(spline._chol) != (n₁, n₁) && error("Number of data values ($n₁) does not correspond to the size of the Gram matrix ($(size(spline._chol))).")
@@ -45,7 +46,7 @@ end
 ###################
 
 function _prepare(nodes::AbstractVecOfSVecs{n,T}, d_nodes::AbstractVecOfSVecs{n,T}, d_dirs::AbstractVecOfSVecs{n,T}, kernel::ReproducingKernel_1) where {n,T}
-    # Normalize inputs, making copies in the process to avoid aliasing
+    # Normalize inputs out-of-place to avoid aliasing
     min_bound, max_bound, scale = _normalization_scaling(nodes, d_nodes)
     nodes   = _normalize.(nodes, (min_bound,), (max_bound,), scale)
     d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), scale)
@@ -69,7 +70,7 @@ function _construct!(
         spline::NormalSpline{n,T,RK},
         values::AbstractVector{T},
         d_values::AbstractVector{T},
-    ) where {n,T,RK <: ReproducingKernel_0}
+    ) where {n, T, RK <: ReproducingKernel_0}
     n₁ = length(values)
     n₂ = length(d_values)
     length(spline._nodes) != n₁ && error("Number of data values ($n₁) does not correspond to the number of nodes $(length(spline._nodes)).")
@@ -96,10 +97,10 @@ function _construct!(
 end
 
 @inline function _evaluate!(
-        spline_values::AbstractVector,
-        spline::NormalSpline{n, <:Any, <:ReproducingKernel_0},
-        points::AbstractVecOfSVecs{n},
-    ) where {n}
+        spline_values::AbstractArray{<:Any,N},
+        spline::NormalSpline{n,<:Any,<:ReproducingKernel_0},
+        points::AbstractArrOfSVecs{n,<:Any,N},
+    ) where {n, N}
     @inbounds for i in 1:length(points)
         spline_values[i] = _evaluate(spline, points[i])
     end
@@ -107,14 +108,14 @@ end
 end
 
 @inline function _evaluate(
-        spline::NormalSpline{n, T, RK},
+        spline::NormalSpline{n,<:Any,RK},
         x::SVector{n},
-    ) where {n, T, RK <: ReproducingKernel_0}
+    ) where {n, RK <: ReproducingKernel_0}
     @unpack _kernel, _nodes, _d_nodes, _d_dirs, _mu = spline
     n₁ = length(_nodes)
     n₂ = length(_d_nodes)
     x  = _normalize(spline, x)
-    v  = zero(promote_type(T, eltype(_kernel), eltype(x)))
+    v  = zero(promote_type(eltype(spline), eltype(_kernel), eltype(x)))
     @inbounds for i in 1:n₁
         v += _mu[i] * _rk(_kernel, x, _nodes[i])
     end
@@ -127,14 +128,14 @@ end
 end
 
 @inline function _evaluate_gradient(
-        spline::NormalSpline{n, T, RK},
+        spline::NormalSpline{n,<:Any,RK},
         x::SVector{n},
-    ) where {n, T, RK <:ReproducingKernel_0}
+    ) where {n, RK <: ReproducingKernel_0}
     @unpack _kernel, _nodes, _d_nodes, _d_dirs, _mu, _scale = spline
     n₁ = length(_nodes)
     n₂ = length(_d_nodes)
     x  = _normalize(spline, x)
-    ∇  = zero(SVector{n,promote_type(T, eltype(_kernel), eltype(x))})
+    ∇  = zero(SVector{n,promote_type(eltype(spline), eltype(_kernel), eltype(x))})
     @inbounds for i in 1:n₁
         ∇ += _mu[i] * _∂rk_∂η(_kernel, x, _nodes[i])
     end
