@@ -1,8 +1,7 @@
 module NormalHermiteSplines
 
-#### Inteface deinition
 export prepare, construct, interpolate
-export evaluate, evaluate_one, evaluate_gradient
+export evaluate, evaluate!, evaluate_one, evaluate_gradient
 export NormalSpline, RK_H0, RK_H1, RK_H2
 export get_epsilon, estimate_epsilon, get_cond, estimate_cond
 export estimate_accuracy
@@ -23,9 +22,6 @@ abstract type AbstractSpline end
 const AbstractArrOfSVecs{n,T,N} = AbstractArray{SVector{n,T},N}
 const AbstractVecOfSVecs{n,T} = AbstractVector{SVector{n,T}}
 const VecOfSVecs{n,T} = Vector{SVector{n,T}}
-
-@inline svectors(x::AbstractMatrix{T}) where {T} = reinterpret(reshape, SVector{size(x,1),T}, x)
-@inline svectors(x::AbstractVector{T}) where {T} = reinterpret(SVector{1,T}, x)
 
 @doc raw"
 `struct NormalSpline{n, T, RK} <: AbstractSpline where {n, T <: Real, RK <: ReproducingKernel_0}`
@@ -66,6 +62,15 @@ include("./ReproducingKernels.jl")
 include("./GramMatrix.jl")
 include("./Utils.jl")
 include("./Interpolate.jl")
+
+####
+#### Public API
+####
+
+@inline svectors(x::AbstractMatrix{T}) where {T} = reinterpret(reshape, SVector{size(x,1),T}, x)
+@inline svectors(x::AbstractVector{T}) where {T} = reinterpret(SVector{1,T}, x)
+
+#### ReproducingKernel_0
 
 """
 `prepare(nodes::AbstractMatrix{T}, kernel::RK = RK_H0()) where {T <: Real, RK <: ReproducingKernel_0}`
@@ -197,7 +202,7 @@ end
     return _evaluate_gradient(spline, point)
 end
 
-########
+#### ReproducingKernel_1
 
 """
 `prepare(nodes::AbstractMatrix{T}, d_nodes::AbstractMatrix{T}, d_dirs::AbstractMatrix{T}, kernel::RK = RK_H1()) where {T <: Real, RK <: ReproducingKernel_1}`
@@ -279,6 +284,8 @@ end
     spline = _prepare(nodes, d_nodes, d_dirs, kernel)
     return _construct!(spline, values, d_values)
 end
+
+### Utils for general case
 
 """
 `get_epsilon(spline::NormalSpline{n,T,RK}) where {n, T <: Real, RK <: ReproducingKernel_0}`
@@ -371,7 +378,7 @@ Return: an estimation of the number of significant digits in the interpolation r
     return _estimate_accuracy(spline)
 end
 
-############################## One-dimensional case
+#### ReproducingKernel_0 (1-dimensional case)
 
 """
 `prepare(nodes::AbstractVector{T}, kernel::RK = RK_H0()) where {T <: Real, RK <: ReproducingKernel_0}`
@@ -462,6 +469,8 @@ Return: the spline derivative value at the `point` location.
     return _evaluate_gradient(spline, SVector{1,T}((point,)))[1]
 end
 
+#### ReproducingKernel_1 (1-dimensional case)
+
 """
 `prepare(nodes::AbstractVector{T}, d_nodes::AbstractVector{T}, kernel::RK = RK_H1()) where {T <: Real, RK <: ReproducingKernel_1}`
 
@@ -513,6 +522,8 @@ Return: the completely initialized `NormalSpline` object that can be passed to `
     d_dirs = fill(ones(SVector{1,T}), length(d_nodes))
     return interpolate(svectors(nodes), values, svectors(d_nodes), d_dirs, d_values, kernel)
 end
+
+### Utils for 1-dimensional case
 
 """
 `estimate_epsilon(nodes::AbstractVector{T}, kernel::RK = RK_H0()) where {T <: Real, RK <: ReproducingKernel_0}`
@@ -605,4 +616,4 @@ end
     return _get_cond(nodes, d_nodes, d_dirs, kernel)
 end
 
-end # module
+end # module NormalHermiteSplines

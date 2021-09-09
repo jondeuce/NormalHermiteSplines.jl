@@ -43,8 +43,6 @@ function _construct!(
     return spline
 end
 
-###################
-
 function _prepare(nodes::AbstractVecOfSVecs{n,T}, d_nodes::AbstractVecOfSVecs{n,T}, d_dirs::AbstractVecOfSVecs{n,T}, kernel::ReproducingKernel_1) where {n,T}
     # Normalize inputs out-of-place to avoid aliasing
     min_bound, max_bound, scale = _normalization_scaling(nodes, d_nodes)
