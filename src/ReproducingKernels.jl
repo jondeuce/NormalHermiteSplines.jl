@@ -1,3 +1,8 @@
+abstract type ReproducingKernel end
+abstract type ReproducingKernel_0 <: ReproducingKernel end
+abstract type ReproducingKernel_1 <: ReproducingKernel_0 end
+abstract type ReproducingKernel_2 <: ReproducingKernel_1 end
+
 @doc raw"
 `struct RK_H0{T} <: ReproducingKernel_0`
 

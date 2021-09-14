@@ -2,39 +2,39 @@
     return (point .- min_bound) ./ scale
     # return clamp.((point .- min_bound) ./ scale, 0, 1) #TODO: clamp nodes? roughly equivalent to nearest neighbour extrapolation
 end
-@inbounds function _normalize(spline::NormalSpline{n}, point::SVector{n}) where {n}
-    return _normalize(point, spline._min_bound, spline._max_bound, spline._scale)
+@inbounds function _normalize(spl::AbstractNormalSpline{n}, point::SVector{n}) where {n}
+    return _normalize(point, _get_min_bound(spl), _get_max_bound(spl), _get_scale(spl))
 end
 
 @inbounds function _unnormalize(point::SVector{n}, min_bound::SVector{n}, max_bound::SVector{n}, scale::Real) where {n}
     return min_bound .+ scale .* point
     # return clamp.(min_bound .+ scale .* point, min_bound, max_bound) #TODO: clamp nodes? roughly equivalent to nearest neighbour extrapolation
 end
-@inbounds function _unnormalize(spline::NormalSpline{n}, point::SVector{n}) where {n}
-    return _unnormalize(point, spline._min_bound, spline._max_bound, spline._scale)
+@inbounds function _unnormalize(spl::AbstractNormalSpline{n}, point::SVector{n}) where {n}
+    return _unnormalize(point, _get_min_bound(spl), _get_max_bound(spl), _get_scale(spl))
 end
 
 function _normalization_scaling(nodes::AbstractVecOfSVecs)
-    min_bound = reduce((x, y) -> min.(x, y), nodes)
-    max_bound = reduce((x, y) -> max.(x, y), nodes)
+    min_bound = reduce((x, y) -> min.(x, y), nodes; init = fill(+Inf, eltype(nodes)))
+    max_bound = reduce((x, y) -> max.(x, y), nodes; init = fill(-Inf, eltype(nodes)))
     scale = maximum(max_bound .- min_bound)
     return min_bound, max_bound, scale
 end
 
 function _normalization_scaling(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs)
-    min_bound = min.(reduce((x, y) -> min.(x, y), nodes), reduce((x, y) -> min.(x, y), d_nodes))
-    max_bound = max.(reduce((x, y) -> max.(x, y), nodes), reduce((x, y) -> max.(x, y), d_nodes))
+    min_bound = min.(reduce((x, y) -> min.(x, y), nodes; init = fill(+Inf, eltype(nodes))), reduce((x, y) -> min.(x, y), d_nodes; init = fill(+Inf, eltype(d_nodes))))
+    max_bound = max.(reduce((x, y) -> max.(x, y), nodes; init = fill(-Inf, eltype(nodes))), reduce((x, y) -> max.(x, y), d_nodes; init = fill(-Inf, eltype(d_nodes))))
     scale = maximum(max_bound .- min_bound)
     return min_bound, max_bound, scale
 end
 
-function _estimate_accuracy(spline::NormalSpline{n,T,RK}) where {n,T,RK <: ReproducingKernel_0}
-    vmax = maximum(abs, spline._values)
+function _estimate_accuracy(spl::AbstractNormalSpline{n,T,RK}) where {n,T,RK <: ReproducingKernel_0}
+    vmax = maximum(abs, _get_values(spl))
     rmae = zero(T)
-    @inbounds for i in 1:length(spline._nodes)
-        point = _unnormalize(spline, spline._nodes[i])
-        σ     = _evaluate(spline, point)
-        rmae  = max(rmae, abs(spline._values[i] - σ))
+    @inbounds for i in 1:length(_get_nodes(spl))
+        point = _unnormalize(spl, _get_nodes(spl)[i])
+        σ     = _evaluate(spl, point)
+        rmae  = max(rmae, abs(_get_values(spl)[i] - σ))
     end
     if vmax > 0
         rmae /= vmax
