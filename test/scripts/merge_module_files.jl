@@ -56,6 +56,7 @@ mainfile = "NormalHermiteSplines.jl"
 depfiles = [
     "ReproducingKernels.jl",
     "GramMatrix.jl",
+    "Splines.jl",
     "Utils.jl",
     "Interpolate.jl",
 ]
