@@ -1,6 +1,5 @@
 @inbounds function _normalize(point::SVector{n}, min_bound::SVector{n}, max_bound::SVector{n}, scale::Real) where {n}
     return (point .- min_bound) ./ scale
-    # return clamp.((point .- min_bound) ./ scale, 0, 1) #TODO: clamp nodes? roughly equivalent to nearest neighbour extrapolation
 end
 @inbounds function _normalize(spl::AbstractNormalSpline{n}, point::SVector{n}) where {n}
     return _normalize(point, _get_min_bound(spl), _get_max_bound(spl), _get_scale(spl))
@@ -8,7 +7,6 @@ end
 
 @inbounds function _unnormalize(point::SVector{n}, min_bound::SVector{n}, max_bound::SVector{n}, scale::Real) where {n}
     return min_bound .+ scale .* point
-    # return clamp.(min_bound .+ scale .* point, min_bound, max_bound) #TODO: clamp nodes? roughly equivalent to nearest neighbour extrapolation
 end
 @inbounds function _unnormalize(spl::AbstractNormalSpline{n}, point::SVector{n}) where {n}
     return _unnormalize(point, _get_min_bound(spl), _get_max_bound(spl), _get_scale(spl))
@@ -152,16 +150,12 @@ function _get_cond(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, d_dir
     _get_cond(nodes, kernel)
 end
 
-# ```
-# Get estimation of the Gram matrix condition number
-# Brás, C.P., Hager, W.W. & Júdice, J.J. An investigation of feasible descent algorithms for estimating the condition number of a matrix. TOP 20, 791–809 (2012).
-# https://link.springer.com/article/10.1007/s11750-010-0161-9
-# ```
-function _estimate_cond(
-        gram::AbstractMatrix{T},
-        chol::LinearAlgebra.Cholesky{T,Matrix{T}},
-        nit = 3,
-    ) where {T}
+"""
+Get estimation of the Gram matrix condition number
+Brás, C.P., Hager, W.W. & Júdice, J.J. An investigation of feasible descent algorithms for estimating the condition number of a matrix. TOP 20, 791–809 (2012).
+https://link.springer.com/article/10.1007/s11750-010-0161-9
+"""
+function _estimate_cond(gram::AbstractMatrix{T}, chol, nit = 3) where {T}
     normgram = norm(gram, 1)
     n = size(gram, 1)
     x = fill(inv(T(n)), n)

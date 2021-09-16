@@ -131,7 +131,6 @@ end
     tnrm  = norm(t)
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
-    S     = SMatrix{n,n,typeof(x)}
     ∇²    = ε²e⁻ˣ * (êξ ⋅ êη)
     ∇²   -= ifelse(x > eps(typeof(x)), (ε * ε²e⁻ˣ / tnrm) * (êξ ⋅ t) * (t ⋅ êη), zero(∇²))
 end

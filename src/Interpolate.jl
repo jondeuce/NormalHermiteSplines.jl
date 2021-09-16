@@ -1,3 +1,5 @@
+#### Construct Normal spline (ReproducingKernel_0)
+
 function _prepare(nodes::AbstractVecOfSVecs{n,T}, kernel::ReproducingKernel_0) where {n,T}
     # Normalize nodes out-of-place to avoid aliasing
     min_bound, max_bound, scale = _normalization_scaling(nodes)
@@ -43,6 +45,8 @@ function _construct!(
     return spl
 end
 
+#### Construct Normal spline (ReproducingKernel_1)
+
 function _prepare(nodes::AbstractVecOfSVecs{n,T}, d_nodes::AbstractVecOfSVecs{n,T}, d_dirs::AbstractVecOfSVecs{n,T}, kernel::ReproducingKernel_1) where {n,T}
     # Normalize inputs out-of-place to avoid aliasing
     min_bound, max_bound, scale = _normalization_scaling(nodes, d_nodes)
@@ -68,7 +72,7 @@ function _construct!(
         spl::NormalSpline{n,T,RK},
         values::AbstractVector{T},
         d_values::AbstractVector{T},
-    ) where {n, T, RK <: ReproducingKernel_0}
+    ) where {n, T, RK <: ReproducingKernel_1}
     n₁ = length(values)
     n₂ = length(d_values)
     length(_get_nodes(spl)) != n₁ && error("Number of data values ($n₁) does not correspond to the number of nodes $(length(_get_nodes(spl))).")
