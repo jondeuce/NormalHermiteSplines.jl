@@ -67,16 +67,16 @@ Base.@kwdef struct ElasticNormalSpline{n, T <: Real, RK <: ReproducingKernel_0} 
     _max_bound::SVector{n,T}
     _scale::T
 end
-@inline _get_nodes(spl::ElasticNormalSpline)     = view(spl._nodes, 1:spl._num_nodes[])
-@inline _get_values(spl::ElasticNormalSpline)    = view(spl._values, 1:spl._num_nodes[])
-@inline _get_d_nodes(spl::ElasticNormalSpline)   = view(spl._d_nodes, 1:spl._num_d_nodes[])
-@inline _get_d_dirs(spl::ElasticNormalSpline)    = view(spl._d_dirs, 1:spl._num_d_nodes[])
-@inline _get_d_values(spl::ElasticNormalSpline)  = view(spl._d_values, 1:spl._num_d_nodes[])
-@inline _get_mu(spl::ElasticNormalSpline)        = view(spl._mu, 1:spl._num_nodes[]+spl._num_d_nodes[])
+@inline _get_nodes(spl::ElasticNormalSpline)     = uview(spl._nodes, 1:spl._num_nodes[])
+@inline _get_values(spl::ElasticNormalSpline)    = uview(spl._values, 1:spl._num_nodes[])
+@inline _get_d_nodes(spl::ElasticNormalSpline)   = uview(spl._d_nodes, 1:spl._num_d_nodes[])
+@inline _get_d_dirs(spl::ElasticNormalSpline)    = uview(spl._d_dirs, 1:spl._num_d_nodes[])
+@inline _get_d_values(spl::ElasticNormalSpline)  = uview(spl._d_values, 1:spl._num_d_nodes[])
+@inline _get_mu(spl::ElasticNormalSpline)        = uview(spl._mu, 1:spl._num_nodes[]+spl._num_d_nodes[])
 @inline _get_cond(spl::ElasticNormalSpline)      = _estimate_cond(_get_gram(spl), _get_chol(spl))
 @inline function _get_gram(spl::ElasticNormalSpline{<:Any, <:Any, <:ReproducingKernel_0})
     n₁ = spl._num_nodes[]
-    return Hermitian(view(Base.parent(spl._chol), 1:n₁, 1:n₁), :U)
+    return Hermitian(uview(Base.parent(spl._chol), 1:n₁, 1:n₁), :U)
 end
 
 function ElasticNormalSpline(min_bound::SVector{n,T}, max_bound::SVector{n,T}, max_size::Int, kernel::RK) where {n, T, RK <: ReproducingKernel_0}

@@ -75,7 +75,7 @@ end
             @test nhs._get_gram(espl)        ≈ nhs._get_gram(spl)
             @test UpperTriangular(C.U[J, J]) ≈ nhs._get_chol(spl).U
             @test ldiv!(similar(b), C, b)    ≈ nhs._get_chol(spl) \ b
-            # @test nhs._get_cond(espl)      ≈ nhs._get_cond(spl) # condition number algorithm is... poorly conditioned?
+            @test nhs._get_cond(espl)        ≈ nhs._get_cond(spl)
             @test nhs._get_min_bound(espl)   ≈ nhs._get_min_bound(spl)
             @test nhs._get_max_bound(espl)   ≈ nhs._get_max_bound(spl)
             @test nhs._get_scale(espl)       ≈ nhs._get_scale(spl)

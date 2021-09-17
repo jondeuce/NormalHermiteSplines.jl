@@ -155,36 +155,33 @@ Get estimation of the Gram matrix condition number
 Brás, C.P., Hager, W.W. & Júdice, J.J. An investigation of feasible descent algorithms for estimating the condition number of a matrix. TOP 20, 791–809 (2012).
 https://link.springer.com/article/10.1007/s11750-010-0161-9
 """
-function _estimate_cond(gram::AbstractMatrix{T}, chol, nit = 3) where {T}
-    normgram = norm(gram, 1)
-    n = size(gram, 1)
+function _estimate_cond(A::AbstractMatrix{T}, F::Factorization, nit = 3) where {T}
+    Anorm = norm(A, 1)
+    n = size(A, 1)
     x = fill(inv(T(n)), n)
-    z = Vector{T}(undef, n)
-    gamma = zero(T)
-    for _ in 1:nit
-        z = ldiv!(z, chol, x)
-        gamma = zero(T)
-        @inbounds for i in 1:n
-            gamma += abs(z[i])
-            z[i] = sign(z[i])
+    z = zeros(T, n)
+    z′ = zeros(T, n)
+    γ = zero(T)
+    @inbounds for _ in 1:nit
+        ldiv!(z′, F, x)
+        γ = zero(T)
+        for i in 1:n
+            γ += abs(z′[i])
+            z′[i] = sign(z′[i])
         end
-        z = ldiv!(z, chol, copy(z))
-        zx = z ⋅ x
-        idx = 1
-        @inbounds for i in 1:n
-            z[i] = abs(z[i])
-            if z[i] > z[idx]
-                idx = i
+        ldiv!(z, F, z′)
+        zdotx = z ⋅ x
+        zmax, imax = T(-Inf), 1
+        for i in 1:n
+            zᵢ = z[i] = abs(z[i])
+            if zᵢ > zmax
+                zmax, imax = zᵢ, i
             end
         end
-        @inbounds begin
-            if z[idx] <= zx
-                break
-            end
-            x .= 0
-            x[idx] = 1
-        end
+        (zmax <= zdotx) && break
+        x .= 0
+        x[imax] = 1
     end
-    cond = T(10)^floor(log10(normgram * gamma))
+    cond = prevpow(T(10), Anorm * γ)
     return cond
 end
