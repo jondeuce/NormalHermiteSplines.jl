@@ -23,7 +23,7 @@ function _gram(
     _gram!(zeros(T, n₁, n₁), nodes, kernel)
 end
 
-#### Incrementally add to Gram matrix (ReproducingKernel_0)
+#### Incrementally add column to Gram matrix (ReproducingKernel_0)
 
 function _gram!(
         A::AbstractMatrix,
@@ -51,30 +51,31 @@ function _gram!(
     n₁  = length(nodes)
     n₂  = length(d_nodes)
     A11 = A
-    A21 = uview(A, n₁+1 : n₁+n₂, 1 : n₁)
+    A12 = uview(A, 1    : n₁,    n₁+1 : n₁+n₂)
     A22 = uview(A, n₁+1 : n₁+n₂, n₁+1 : n₁+n₂)
 
     @inbounds for j in 1:n₁
-        # Top-left block (n₁ x n₁)
-        for i in j:n₁
+        # Top-left block (n₁ × n₁)
+        for i in 1:j
             A11[i,j] = _rk(kernel, nodes[i], nodes[j])
         end
-        # Bottom-left block (n₂ x n₁)
-        for i in 1:n₂
-            A21[i,j] = _∂rk_∂e(kernel, nodes[j], d_nodes[i], d_dirs[i])
-        end
     end
 
-    # Bottom-right block (n₂ x n₂)
     ε² = kernel.ε^2
     @inbounds for j in 1:n₂
-        A22[j, j] = ε²
-        for i in j+1:n₂
+        # Top-right block (n₁ × n₂)
+        for i in 1:n₁
+            A12[i,j] = _∂rk_∂e(kernel, nodes[i], d_nodes[j], d_dirs[j])
+        end
+
+        # Bottom-right block (n₂ × n₂)
+        for i in 1:j-1
             A22[i,j] = _∂²rk_∂²e(kernel, d_nodes[j], d_nodes[i], d_dirs[j], d_dirs[i])
         end
+        A22[j,j] = ε²
     end
 
-    return Hermitian(A, :L)
+    return Hermitian(A, :U)
 end
 
 function _gram(
@@ -87,6 +88,62 @@ function _gram(
     n₂ = length(d_nodes)
     T  = promote_type(eltype(eltype(nodes)), eltype(eltype(d_nodes)), eltype(eltype(d_dirs)))
     _gram!(zeros(T, n₁+n₂, n₁+n₂), nodes, d_nodes, d_dirs, kernel)
+end
+
+#### Incrementally add column to Gram matrix (ReproducingKernel_1)
+
+function _gram!(
+        A::AbstractMatrix,
+        new_node::SVector{n},
+        curr_nodes::AbstractVecOfSVecs{n},
+        curr_d_nodes::AbstractVecOfSVecs{n},
+        curr_d_dirs::AbstractVecOfSVecs{n},
+        kernel::ReproducingKernel_1,
+    ) where {n}
+    n₁ = length(curr_nodes)
+    n₂ = length(curr_d_nodes)
+    @assert size(A) == (n₁+1+n₂, n₁+1+n₂)
+
+    # Top-left block (n₁+1 × n₁+1), right column (n₁+1 terms)
+    @inbounds for i in 1:n₁
+        A[i,n₁+1] = _rk(kernel, new_node, curr_nodes[i])
+    end
+    @inbounds A[n₁+1,n₁+1] = _rk(kernel, new_node, new_node)
+
+    # Top-right block (n₁+1 × n₂), bottom row (n₂ terms)
+    @inbounds for j in 1:n₂
+        A[n₁+1,n₁+1+j] = _∂rk_∂e(kernel, new_node, curr_d_nodes[j], curr_d_dirs[j])
+    end
+
+    return Hermitian(A, :U)
+end
+
+function _gram!(
+        A::AbstractMatrix,
+        d_node::SVector{n},
+        d_dir::SVector{n},
+        curr_nodes::AbstractVecOfSVecs{n},
+        curr_d_nodes::AbstractVecOfSVecs{n},
+        curr_d_dirs::AbstractVecOfSVecs{n},
+        kernel::ReproducingKernel_1,
+    ) where {n}
+    n₁ = length(curr_nodes)
+    n₂ = length(curr_d_nodes)
+    @assert size(A) == (n₁+n₂+1, n₁+n₂+1)
+
+    # Top-right block, (n₁ × n₂+1), right column (n₁ terms)
+    @inbounds for i in 1:n₁
+        A[i,end] = _∂rk_∂e(kernel, curr_nodes[i], d_node, d_dir)
+    end
+
+    # Bottom-right block (n₂+1 × n₂+1), right column (n₂+1 terms)
+    ε² = kernel.ε^2
+    @inbounds for i in 1:n₂
+        A[n₁+i,end] = _∂²rk_∂²e(kernel, curr_d_nodes[i], d_node, curr_d_dirs[i], d_dir)
+    end
+    @inbounds A[n₁+n₂+1,end] = ε²
+
+    return Hermitian(A, :U)
 end
 
 #### Elastic Cholesky
@@ -121,21 +178,23 @@ end
 """
     LinearAlgebra.cholesky!(C::ElasticCholesky, v::AbstractVector{T}) where {T}
 
-Update the Cholesky factorization `C` as if a row and column were inserted
-into the underlying matrix `A`. Specifically, let `C = cholesky(A)` and
+Update the Cholesky factorization `C` as if the column `v` (and by symmetry, the corresponding row `vᵀ`)
+were inserted into the underlying matrix `A`. Specifically, let `L` be the lower-triangular cholesky factor
+of `A` such that `A = LLᵀ`, and let `v = [d; γ]` such that the new matrix `A⁺` is given by
 
-    Ã = [A  d]
-        [dᵀ γ]
+```
+A⁺ = [A  d]
+     [dᵀ γ].
+```
 
-where `v = [d; γ]`.
+Then, the corresponding updated cholesky factor `L⁺` of `⁺` is:
 
-The corresponding updated cholesky factorization is:
+```
+L⁺ = [L  e]
+     [eᵀ α]
+```
 
-    L̃ = [L   ]
-        [eᵀ α]
-
-where `e = L⁻¹d`, `α = √τ`, and `τ = γ - e⋅e > 0`.
-If `τ ≤ 0` then `Ã` is not positive definite.
+where `e = L⁻¹d`, `α = √τ`, and `τ = γ - e⋅e > 0`. If `τ ≤ 0`, then `A⁺` is not positive definite.
 
 See:
     https://igorkohan.github.io/NormalHermiteSplines.jl/dev/Normal-Splines-Method/#Algorithms-for-updating-Cholesky-factorization
@@ -150,7 +209,7 @@ function LinearAlgebra.cholesky!(
     @assert length(v) == ncols[] + 1 <= maxcols
 
     @inbounds if ncols[] == 0
-        # Initialize first entry of A
+        # Initialize first entry of `A`
         colperms[1] = j
         if fill_parent
             A[j,j] = v[1]
@@ -158,24 +217,25 @@ function LinearAlgebra.cholesky!(
         U[j,j] = sqrt(v[1])
         ncols[] = 1
     else
-        # Update A with new column
+        # Fill `A` with new column
         colperms[ncols[] + 1] = j
         if fill_parent
             rows = uview(colperms, 1:ncols[] + 1)
             copyto!(uview(A, rows, j), v)
         end
 
-        # Update U with new column
+        # Update `U` with new column
         J = uview(colperms, 1:ncols[])
         d = uview(A, J, j)
         γ = A[j,j]
         e = uview(U, J, j)
         Uᵀ = UpperTriangular(uview(U, J, J))'
         ldiv!(e, Uᵀ, d)
-        α = √max(γ - e⋅e, zero(T))
-        U[j,j] = max(α, eps(T))
+        τ = γ - e⋅e
+        α = √max(τ, 0) # `τ` should be positive by construction
+        U[j,j] = max(α, eps(T)) # if `α < ϵ` you have bigger problems...
 
-        # Update indices
+        # Increment column counter
         ncols[] += 1
     end
 
