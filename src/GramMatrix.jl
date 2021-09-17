@@ -91,30 +91,35 @@ end
 
 #### Elastic Cholesky
 
-Base.@kwdef struct ElasticCholesky{T} <: AbstractMatrix{T}
-    maxsize::Int
-    A::Matrix{T} = zeros(T, maxsize, maxsize)
-    U::Matrix{T} = zeros(T, maxsize, maxsize)
-    buf::Vector{T} = zeros(T, maxsize)
-    perms::Vector{Int} = zeros(Int, maxsize)
+Base.@kwdef struct ElasticCholesky{T, AType <: AbstractMatrix{T}} <: LinearAlgebra.Factorization{T}
+    maxcols::Int
     ncols::Base.RefValue{Int} = Ref(0)
+    colperms::Vector{Int}     = zeros(Int, maxcols)
+    A::AType                  = zeros(T, maxcols, maxcols)
+    U::Matrix{T}              = zeros(T, maxcols, maxcols)
+    U⁻ᵀb::Vector{T}           = zeros(T, maxcols)
 end
-Base.eltype(::ElasticCholesky{T}) where {T} = T
-Base.parent(C::ElasticCholesky) = C.A
-Base.size(C::ElasticCholesky) = (C.ncols[], C.ncols[])
+ElasticCholesky{T}(maxcols::Int) where {T} = ElasticCholesky{T,Matrix{T}}(; maxcols = maxcols)
+ElasticCholesky(A::AbstractMatrix{T}) where {T} = ElasticCholesky{T,typeof(A)}(; maxcols = size(A,2), A = A)
 
-function LinearAlgebra.ldiv!(y::AbstractVector{T}, C::ElasticCholesky{T}, b::AbstractVector{T}) where {T}
-    @unpack U, buf, perms, ncols = C
-    J = uview(perms, 1:ncols[])
+Base.eltype(::ElasticCholesky{T}) where {T} = T
+Base.size(C::ElasticCholesky) = (C.ncols[], C.ncols[])
+Base.parent(C::ElasticCholesky) = C.A
+Base.empty!(C::ElasticCholesky) = (C.ncols[] = 0; C)
+Base.show(io::IO, mime::MIME"text/plain", C::ElasticCholesky{T}) where {T} = (print(io, "ElasticCholesky{T}\nU factor:\n"); show(io, mime, UpperTriangular(C.U[C.colperms[1:C.ncols[]], C.colperms[1:C.ncols[]]])))
+
+function LinearAlgebra.ldiv!(x::AbstractVector{T}, C::ElasticCholesky{T}, b::AbstractVector{T}) where {T}
+    @unpack U, U⁻ᵀb, colperms, ncols = C
+    J = uview(colperms, 1:ncols[])
     U = UpperTriangular(uview(U, J, J))
-    tmp = uview(buf, 1:ncols[])
-    ldiv!(tmp, U', b)
-    ldiv!(y, U, tmp)
-    return y
+    U⁻ᵀb = uview(U⁻ᵀb, 1:ncols[])
+    ldiv!(U⁻ᵀb, U', b)
+    ldiv!(x, U, U⁻ᵀb)
+    return x
 end
 
 """
-    _insert_column!(C::ElasticCholesky, v::AbstractVector{T}) where {T}
+    LinearAlgebra.cholesky!(C::ElasticCholesky, v::AbstractVector{T}) where {T}
 
 Update the Cholesky factorization `C` as if a row and column were inserted
 into the underlying matrix `A`. Specifically, let `C = cholesky(A)` and
@@ -135,23 +140,33 @@ If `τ ≤ 0` then `Ã` is not positive definite.
 See:
     https://igorkohan.github.io/NormalHermiteSplines.jl/dev/Normal-Splines-Method/#Algorithms-for-updating-Cholesky-factorization
 """
-function _insert_column!(f!, C::ElasticCholesky{T}, j::Int) where {T}
-    @unpack maxsize, A, U, perms, ncols = C
-    @assert j ∉ perms
+function LinearAlgebra.cholesky!(
+        C::ElasticCholesky{T},
+        j::Int,
+        v::AbstractVector{T},
+        ::Val{fill_parent} = Val(true),
+    ) where {T, fill_parent}
+    @unpack maxcols, A, U, colperms, ncols = C
+    @assert length(v) == ncols[] + 1 <= maxcols
+
     @inbounds if ncols[] == 0
         # Initialize first entry of A
-        perms[1] = j
-        f!(uview(A, j:j, j:j))
-        U[j,j] = sqrt(A[j,j])
+        colperms[1] = j
+        if fill_parent
+            A[j,j] = v[1]
+        end
+        U[j,j] = sqrt(v[1])
         ncols[] = 1
     else
         # Update A with new column
-        perms[ncols[]+1] = j
-        J = uview(perms, 1:ncols[]+1)
-        f!(uview(A, J, J))
+        colperms[ncols[] + 1] = j
+        if fill_parent
+            rows = uview(colperms, 1:ncols[] + 1)
+            copyto!(uview(A, rows, j), v)
+        end
 
         # Update U with new column
-        J = uview(perms, 1:ncols[])
+        J = uview(colperms, 1:ncols[])
         d = uview(A, J, j)
         γ = A[j,j]
         e = uview(U, J, j)
@@ -163,48 +178,27 @@ function _insert_column!(f!, C::ElasticCholesky{T}, j::Int) where {T}
         # Update indices
         ncols[] += 1
     end
+
     return C
 end
 
-# Insert `v` into column `j` of `C.A` and update the corresponding factorization `C.U`
-function _insert_column!(C::ElasticCholesky{T}, j::Int, v::AbstractVector{T}) where {T}
-    @unpack maxsize, ncols = C
-    @assert length(v) == ncols[]+1 <= maxsize
-    _insert_column!(C, j) do A
-        @inbounds for i in 1:size(A, 1)
-            A[i,end] = v[i]
-        end
-    end
+# Update the `j`th column of the factorization `C.U`, assuming the corresponding column `j` of `C.A` has been filled
+function LinearAlgebra.cholesky!(C::ElasticCholesky{T}, j::Int) where {T}
+    @unpack maxcols, A, colperms, ncols = C
+    @assert ncols[] + 1 <= maxcols
+
+    @inbounds colperms[ncols[] + 1] = j
+    rows = uview(colperms, 1:ncols[] + 1)
+    v = uview(A, rows, j)
+    cholesky!(C, j, v, Val(false))
+
+    return C
 end
 
-# Update column `j` of the factorization `C.U`, assuming the corresponding column `j` of `C.A` has already been updated
-function _factorize_column!(C::ElasticCholesky, j::Int)
-    _insert_column!(C, j) do _
-        nothing
+# Update columns `J` of the factorization `C.U`, assuming the corresponding columns `J` of `C.A` have been filled
+function LinearAlgebra.cholesky!(C::ElasticCholesky, J = axes(C.A, 2))
+    for j in J
+        cholesky!(C, j)
     end
-end
-
-using Random
-function test_elastic_cholesky(; maxsize = 3)
-    A = rand(maxsize, maxsize)
-    A = A'A
-    C = ElasticCholesky{Float64}(; maxsize = maxsize)
-    perms = randperm(maxsize) #1:maxsize #
-    for j in 1:maxsize
-        jperm = perms[j]
-        v = A[1:j,j]
-        @time _insert_column!(C, jperm, v)
-
-        J = perms[1:C.ncols[]]
-        @assert Hermitian(C.A[J, J], :U) ≈ A[1:j, 1:j]
-        @assert UpperTriangular(C.U[J, J]) ≈ cholesky(A[1:j, 1:j]).U
-        @assert C.perms[1:C.ncols[]] == J
-        @assert C.ncols[] == j
-
-        b = rand(j)
-        y = similar(b)
-        @time ldiv!(y, C, b)
-        @assert y ≈ cholesky(A[1:j, 1:j]) \ b
-    end
-    return C, A
+    return C
 end

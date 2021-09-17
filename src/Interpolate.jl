@@ -9,16 +9,11 @@ function _prepare(nodes::AbstractVecOfSVecs{n,T}, kernel::ReproducingKernel_0) w
         kernel = _estimate_ε(kernel, nodes)
     end
 
-    values   = zeros(T, 0)
-    d_nodes  = zeros(SVector{n,T}, 0)
-    d_dirs   = zeros(SVector{n,T}, 0)
-    d_values = zeros(T, 0)
-    mu       = zeros(T, 0)
     gram     = _gram(nodes, kernel)
     chol     = cholesky(gram)
     cond     = _estimate_cond(gram, chol)
 
-    return NormalSpline(kernel, nodes, values, d_nodes, d_dirs, d_values, mu, gram, chol, cond, min_bound, max_bound, scale)
+    return NormalSpline{n,T,typeof(kernel)}(; _kernel = kernel, _nodes = nodes, _gram = gram, _chol = chol, _cond = cond, _min_bound = min_bound, _max_bound = max_bound, _scale = scale)
 end
 
 function _construct!(
@@ -58,14 +53,11 @@ function _prepare(nodes::AbstractVecOfSVecs{n,T}, d_nodes::AbstractVecOfSVecs{n,
         kernel = _estimate_ε(kernel, nodes, d_nodes)
     end
 
-    values   = zeros(T, 0)
-    d_values = zeros(T, 0)
-    mu       = zeros(T, 0)
     gram     = _gram(nodes, d_nodes, d_dirs, kernel)
     chol     = cholesky(gram)
     cond     = _estimate_cond(gram, chol)
 
-    return NormalSpline(kernel, nodes, values, d_nodes, d_dirs, d_values, mu, gram, chol, cond, min_bound, max_bound, scale)
+    NormalSpline{n,T,typeof(kernel)}(; _kernel = kernel, _nodes = nodes, _d_nodes = d_nodes, _d_dirs = d_dirs, _gram = gram, _chol = chol, _cond = cond, _min_bound = min_bound, _max_bound = max_bound, _scale = scale)
 end
 
 function _construct!(
