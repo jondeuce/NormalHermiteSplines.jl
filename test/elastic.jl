@@ -1,4 +1,4 @@
-@testset "ElasticCholesky" begin
+@testset "Elastic Cholesky" begin
     T = Float64
     max_size = 4
     A = rand(MersenneTwister(0), max_size, max_size)
@@ -6,23 +6,25 @@
 
     # Test incrementally adding columns of `A` to `ElasticCholesky`
     for colperms in [[1,2,3,4], [4,3,2,1], [1,3,2,4], [4,1,3,2]]
-        C = ElasticCholesky{T}(max_size)
+        C_copy_into_A = ElasticCholesky{T}(max_size)
+        C_wrap_A = ElasticCholesky(A)
         for j in 1:max_size
-            # Add column `j` of `A` to the `jperm`th column of `C.A`
-            jperm = colperms[j]
-            v = A[1:j,j]
-            cholesky!(C, jperm, v, Val(true))
+            # Add (permuted) column `colperms[j]` of `A` to the `colperms[j]`th column of `C.A`
+            cholesky!(C_copy_into_A, colperms[j], A[colperms[1:j], colperms[j]], Val(true))
+            cholesky!(C_wrap_A, colperms[j])
 
-            # Check the fields of `C`
-            J = colperms[1:C.ncols[]]
-            @test Hermitian(C.A[J, J], :U) ≈ A[1:j, 1:j]
-            @test UpperTriangular(C.U[J, J]) ≈ cholesky(A[1:j, 1:j]).U
-            @test C.colperms[1:C.ncols[]] == J
-            @test C.ncols[] == j
+            for C in [C_copy_into_A, C_wrap_A]
+                # Check the fields of `C`
+                J = colperms[1:C.ncols[]]
+                @test Hermitian(C.A[J, J], :U) ≈ A[J, J]
+                @test UpperTriangular(C.U[J, J]) ≈ cholesky(A[J, J]).U
+                @test C.colperms[1:C.ncols[]] == J
+                @test C.ncols[] == j
 
-            # Check `ldiv!` gives same result as `LinearAlgebra.cholesky`
-            b = rand(j)
-            @test ldiv!(similar(b), C, b) ≈ cholesky(A[1:j, 1:j]) \ b
+                # Check `ldiv!` gives same result as `LinearAlgebra.cholesky`
+                b = rand(j)
+                @test ldiv!(similar(b), C, b) ≈ cholesky(A[J, J]) \ b
+            end
         end
     end
 
@@ -100,7 +102,7 @@ end
     end
 end
 
-@testset "ElasticNormalSpline" begin
+@testset "Elastic Normal Spline" begin
     nhs = NormalHermiteSplines
     max_size = 3
     T = Float64
@@ -109,31 +111,30 @@ end
         @unpack min_bound, max_bound, nodes, values, d_nodes, d_dirs, d_values = random_nodes(n, T, max_size)
         rk_H0 = RK_H0(0.5 + rand())
         rk_H1 = RK_H1(0.5 + rand())
-        global espl_H0 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H0)
-        global espl_H1_0 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H1)
-        global espl_H1_1 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H1)
+        espl_H0 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H0)
+        espl_H1_0 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H1)
+        espl_H1_1 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H1)
 
         for i in 1:max_size
             # Update `ElasticNormalSpline`
-            insert!(espl_H0, nodes[i], values[i])
-            insert!(espl_H1_0, nodes[i], values[i])
-            insert!(espl_H1_1, nodes[i], values[i])
-            insert!(espl_H1_1, d_nodes[i], d_dirs[i], d_values[i])
-            i == 1 && continue # `NormalSpline` requires at least two nodes
-            # i==1 && (println("\n--------------------------------------------------\n"); continue)
+            nodes′, values′ = nodes[1:i], values[1:i]
+            d_nodes′, d_dirs′, d_values′ = d_nodes[1:n*i], d_dirs[1:n*i], d_values[1:n*i]
+
+            # Insert regular node
+            insert!(espl_H0, nodes′[i], values′[i])
+            insert!(espl_H1_0, nodes′[i], values′[i])
+
+            # Insert `n` derivative nodes 
+            insert!(espl_H1_1, nodes′[i], values′[i])
+            for k in n*(i-1).+(1:n)
+                insert!(espl_H1_1, d_nodes′[k], d_dirs′[k], d_values′[k])
+            end
 
             # Compute `NormalSpline`
-            global spl_H0  = interpolate(nodes[1:i], values[1:i], rk_H0)
-            global spl_H1_0 = interpolate(nodes[1:i], values[1:i], rk_H1)
-            global spl_H1_1 = interpolate(nodes[1:i], values[1:i], d_nodes[1:i], d_dirs[1:i], d_values[1:i], rk_H1)
-            # # println("NormalSpline: (RK_H1, n₁=$max_size, n₂=$max_size)"); display(UpperTriangular(parent(nhs._get_gram(spl_H1_1)))); println("\n")
-            # println("\n--------------------------------------------------\n")
-
-            # println("spl_H1_0"); display(nhs._get_mu(spl_H1_0)'); display(nhs._get_rhs(spl_H1_0)'); println("")
-            # println("espl_H1_0"); display(nhs._get_mu(espl_H1_0)'); display(nhs._get_rhs(espl_H1_0)'); println("")
-
-            # println("spl_H1_1"); display(nhs._get_mu(spl_H1_1)'); display(nhs._get_rhs(spl_H1_1)'); println("")
-            # println("espl_H1_1"); display(nhs._get_mu(espl_H1_1)'); display(nhs._get_rhs(espl_H1_1)'); println("")
+            i == 1 && continue # `NormalSpline` requires at least two nodes′
+            spl_H0  = interpolate(nodes′, values′, rk_H0)
+            spl_H1_0 = interpolate(nodes′, values′, rk_H1)
+            spl_H1_1 = interpolate(nodes′, values′, d_nodes′, d_dirs′, d_values′, rk_H1)
 
             for (espl, spl) in [
                     (espl_H0, spl_H0)
@@ -141,26 +142,25 @@ end
                     (espl_H1_1, spl_H1_1)
                 ]
                 C = espl._chol
+                n₁ = espl._num_nodes[]
                 J = C.colperms[1:C.ncols[]]
-                # J = nhs._get_block_indices(espl)
-                b = randn(i)
+
+                # Cholesky factorization of `ElasticNormalSpline` is built incrementally in arbitrary column order of the underlying Gram matrix;
+                # compare with the Cholesky factorization of the gram matrix from `NormalSpline`, permuted appropriately
+                J′ = (j -> ifelse(j > max_size,  j - max_size + n₁, j)).(J)
+                C′ = cholesky(nhs._get_gram(spl)[J′, J′])
+                b = randn(C.ncols[])
+
                 @test nhs._get_kernel(espl)      == nhs._get_kernel(spl)
                 @test nhs._get_nodes(espl)       ≈ nhs._get_nodes(spl)
                 @test nhs._get_values(espl)      ≈ nhs._get_values(spl)
                 @test nhs._get_d_nodes(espl)     ≈ nhs._get_d_nodes(spl)
                 @test nhs._get_d_dirs(espl)      ≈ nhs._get_d_dirs(spl)
                 @test nhs._get_d_values(espl)    ≈ nhs._get_d_values(spl)
-                # @test nhs._get_mu(espl)          ≈ nhs._get_mu(spl)
+                @test nhs._get_mu(espl)          ≈ nhs._get_mu(spl)
                 @test nhs._get_gram(espl)        ≈ nhs._get_gram(spl)
-                try
-                    @assert UpperTriangular(C.U[J, J]) ≈ nhs._get_chol(spl).U
-                    # @test cholesky(copy(nhs._get_gram(espl))).U ≈ nhs._get_chol(spl).U
-                catch
-                    @show J'
-                    println("$(typeof(espl))"); display(C.U[J, J]); println("")
-                    println("$(typeof(spl))"); display(nhs._get_chol(spl).U); println("")
-                end
-                # @test ldiv!(similar(b), C, b)    ≈ nhs._get_chol(spl) \ b
+                @test UpperTriangular(C.U[J, J]) ≈ C′.U
+                @test ldiv!(similar(b), C, b)    ≈ C′ \ b
                 # @test nhs._get_cond(espl)      ≈ nhs._get_cond(spl)
                 @test nhs._get_min_bound(espl)   ≈ nhs._get_min_bound(spl)
                 @test nhs._get_max_bound(espl)   ≈ nhs._get_max_bound(spl)

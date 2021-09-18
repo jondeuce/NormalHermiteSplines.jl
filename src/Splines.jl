@@ -68,6 +68,7 @@ Base.@kwdef struct ElasticNormalSpline{n, T <: Real, RK <: ReproducingKernel_0} 
     _d_values::Vector{T}                = zeros(T, n * _max_size)
     _mu::Vector{T}                      = zeros(T, (n+1) * _max_size)
     _rhs::Vector{T}                     = zeros(T, (n+1) * _max_size)
+    _gram::Matrix{T}                    = zeros(T, (n+1) * _max_size, (n+1) * _max_size)
     _chol::ElasticCholesky{T,Matrix{T}} = ElasticCholesky{T}((n+1) * _max_size)
     _min_bound::SVector{n,T}
     _max_bound::SVector{n,T}
@@ -82,7 +83,7 @@ end
 @inline _get_cond(spl::ElasticNormalSpline)          = _estimate_cond(_get_gram(spl), _get_chol(spl))
 @inline _get_mu(spl::ElasticNormalSpline)            = (J = _get_block_indices(spl); return uview(spl._mu, J))
 @inline _get_rhs(spl::ElasticNormalSpline)           = (J = _get_block_indices(spl); return uview(spl._rhs, J))
-@inline _get_gram(spl::ElasticNormalSpline)          = (J = _get_block_indices(spl); A = uview(parent(spl._chol), J, J); return Hermitian(A, :U))
+@inline _get_gram(spl::ElasticNormalSpline)          = (J = _get_block_indices(spl); A = uview(spl._gram, J, J); return Hermitian(A, :U))
 
 # @inline _get_block_indices(spl::ElasticNormalSpline{<:Any, <:Any, <:ReproducingKernel_0}) = 1:spl._num_nodes[]
 # @inline function _get_block_indices(spl::ElasticNormalSpline{<:Any, <:Any, <:ReproducingKernel_1})
@@ -139,21 +140,19 @@ function Base.insert!(
     end
 
     # Insert column into position `n₁+1` of Gram matrix
-    # J = uview(spl._block_indices, 1:n₁+1+n₂)
-    # gram = uview(parent(spl._chol), J, J)
     if RK <: ReproducingKernel_1
-        # @show length.((curr_nodes, curr_d_nodes, curr_d_dirs))
-        gram = parent(_get_chol(spl))
-        # println("BEFORE:    ElasticNormalSpline: new node (RK_H1, n₁=$n₁, n₂=$n₂)"); display(UpperTriangular(parent(gram))); println("")
-        _gram!(gram, n₁max, n₂max, new_node, curr_nodes, curr_d_nodes, curr_d_dirs, _get_kernel(spl))
-        # println("AFTER:     ElasticNormalSpline: new node (RK_H1, n₁=$n₁, n₂=$n₂)"); display(UpperTriangular(parent(gram))); println("")
+        _gram!(parent(_get_gram(spl)), new_node, curr_nodes, curr_d_nodes, curr_d_dirs, _get_kernel(spl))
     else
         _gram!(parent(_get_gram(spl)), new_node, curr_nodes, _get_kernel(spl))
     end
 
-    # Update column `n₁+1` of Cholesky factorization and compute spline coefficients
-    cholesky!(_get_chol(spl), n₁+1)
-    ldiv!(_get_mu(spl), _get_chol(spl), _get_rhs(spl))
+    # Update column `n₁+1` of Cholesky factorization
+    insert!(spl._chol, n₁+1, Hermitian(spl._gram))
+    cholesky!(spl._chol, n₁+1)
+
+    # Solve for spline coefficients
+    rows = uview(spl._chol.colperms, 1 : spl._chol.ncols[])
+    ldiv!(uview(spl._mu, rows), spl._chol, uview(spl._rhs, rows))
 
     return nothing
 end
@@ -187,18 +186,13 @@ function Base.insert!(
     end
 
     # Insert column into position `n₁max+n₂+1` of Gram matrix
-    # gram = uview(parent(spl._chol), 1:n₁max+n₂+1, 1:n₁max+n₂+1)
-    # @show length.((curr_nodes, curr_d_nodes, curr_d_dirs))
-    gram = parent(_get_chol(spl))
-    _gram!(gram, n₁max, n₂max, new_d_node, new_d_dir, curr_nodes, curr_d_nodes, curr_d_dirs, _get_kernel(spl))
+    _gram!(parent(_get_gram(spl)), new_d_node, new_d_dir, curr_nodes, curr_d_nodes, curr_d_dirs, _get_kernel(spl))
+    insert!(spl._chol, n₁max+n₂+1, Hermitian(spl._gram))
+    cholesky!(spl._chol, n₁max+n₂+1)
 
-    # Update column `n₁max+n₂+1` of Cholesky factorization and compute spline coefficients
-    # println("BEFORE:    Gram Matrix:"); display(spl._chol.A); println("")
-    # println("BEFORE:    ElasticNormalSpline: new derivative node (RK_H1, n₁=$n₁, n₂=$n₂)"); J = spl._chol.colperms[1:spl._chol.ncols[]]; display(spl._chol.U[J,J]); println("")
-    cholesky!(_get_chol(spl), n₁max+n₂+1)
-    # println("AFTER:     ElasticNormalSpline: new derivative node (RK_H1, n₁=$n₁, n₂=$n₂)"); J = spl._chol.colperms[1:spl._chol.ncols[]]; display(spl._chol.U[J,J]); println("")
-
-    ldiv!(_get_mu(spl), _get_chol(spl), _get_rhs(spl))
+    # Solve for spline coefficients
+    rows = uview(spl._chol.colperms, 1 : spl._chol.ncols[])
+    ldiv!(uview(spl._mu, rows), spl._chol, uview(spl._rhs, rows))
 
     return nothing
 end

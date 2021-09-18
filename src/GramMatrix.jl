@@ -94,8 +94,6 @@ end
 
 function _gram!(
         A::AbstractMatrix,
-        n₁max::Int,
-        n₂max::Int,
         new_node::SVector{n},
         curr_nodes::AbstractVecOfSVecs{n},
         curr_d_nodes::AbstractVecOfSVecs{n},
@@ -104,7 +102,7 @@ function _gram!(
     ) where {n}
     n₁ = length(curr_nodes)
     n₂ = length(curr_d_nodes)
-    @assert size(A) == (n₁max + n₂max, n₁max + n₂max)
+    @assert size(A) == (n₁+1+n₂, n₁+1+n₂)
 
     # Top-left block (n₁+1 × n₁+1), right column (n₁+1 terms)
     @inbounds for i in 1:n₁
@@ -114,7 +112,7 @@ function _gram!(
 
     # Top-right block (n₁+1 × n₂), bottom row (n₂ terms)
     @inbounds for j in 1:n₂
-        A[n₁+1, n₁max+j] = _∂rk_∂e(kernel, new_node, curr_d_nodes[j], curr_d_dirs[j])
+        A[n₁+1, n₁+1+j] = _∂rk_∂e(kernel, new_node, curr_d_nodes[j], curr_d_dirs[j])
     end
 
     return Hermitian(A, :U)
@@ -122,8 +120,6 @@ end
 
 function _gram!(
         A::AbstractMatrix,
-        n₁max::Int,
-        n₂max::Int,
         d_node::SVector{n},
         d_dir::SVector{n},
         curr_nodes::AbstractVecOfSVecs{n},
@@ -133,19 +129,19 @@ function _gram!(
     ) where {n}
     n₁ = length(curr_nodes)
     n₂ = length(curr_d_nodes)
-    @assert size(A) == (n₁max + n₂max, n₁max + n₂max)
+    @assert size(A) == (n₁+n₂+1, n₁+n₂+1)
 
     # Top-right block, (n₁ × n₂+1), right column (n₁ terms)
     @inbounds for i in 1:n₁
-        A[i, n₁max+n₂+1] = _∂rk_∂e(kernel, curr_nodes[i], d_node, d_dir)
+        A[i, n₁+n₂+1] = _∂rk_∂e(kernel, curr_nodes[i], d_node, d_dir)
     end
 
     # Bottom-right block (n₂+1 × n₂+1), right column (n₂+1 terms)
     ε² = kernel.ε^2
     @inbounds for i in 1:n₂
-        A[n₁max+i, n₁max+n₂+1] = _∂²rk_∂²e(kernel, d_node, curr_d_nodes[i], d_dir, curr_d_dirs[i])
+        A[n₁+i, n₁+n₂+1] = _∂²rk_∂²e(kernel, d_node, curr_d_nodes[i], d_dir, curr_d_dirs[i])
     end
-    @inbounds A[n₁max+n₂+1, n₁max+n₂+1] = ε²
+    @inbounds A[n₁+n₂+1, n₁+n₂+1] = ε²
 
     return Hermitian(A, :U)
 end
@@ -183,6 +179,16 @@ function LinearAlgebra.ldiv!(x::AbstractVector{T}, C::ElasticCholesky{T}, b::Abs
     return x
 end
 
+function Base.insert!(C::ElasticCholesky{T}, j::Int, B::AbstractMatrix{T}) where {T}
+    @unpack A, colperms, ncols = C
+    @inbounds colperms[ncols[] + 1] = j
+    rows = uview(colperms, 1 : ncols[] + 1)
+    @inbounds for i in rows
+        A[i,j] = B[i,j]
+    end
+    return C
+end
+
 """
     LinearAlgebra.cholesky!(C::ElasticCholesky, v::AbstractVector{T}) where {T}
 
@@ -211,7 +217,7 @@ function LinearAlgebra.cholesky!(
         C::ElasticCholesky{T},
         j::Int,
         v::AbstractVector{T},
-        ::Val{fill_parent} = Val(true),
+        ::Val{fill_parent},
     ) where {T, fill_parent}
     @unpack maxcols, A, U, colperms, ncols = C
     @assert length(v) == ncols[] + 1 <= maxcols
