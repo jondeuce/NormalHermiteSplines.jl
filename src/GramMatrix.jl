@@ -33,9 +33,9 @@ function _gram!(
     )
     n₁ = length(curr_nodes)
     @inbounds for i in 1:n₁
-        A[i,end] = _rk(kernel, curr_nodes[i], new_node)
+        A[i, n₁+1] = _rk(kernel, curr_nodes[i], new_node)
     end
-    @inbounds A[end,end] = _rk(kernel, new_node, new_node)
+    @inbounds A[n₁+1, n₁+1] = _rk(kernel, new_node, new_node)
     return Hermitian(A, :U)
 end
 
@@ -94,6 +94,8 @@ end
 
 function _gram!(
         A::AbstractMatrix,
+        n₁max::Int,
+        n₂max::Int,
         new_node::SVector{n},
         curr_nodes::AbstractVecOfSVecs{n},
         curr_d_nodes::AbstractVecOfSVecs{n},
@@ -102,17 +104,17 @@ function _gram!(
     ) where {n}
     n₁ = length(curr_nodes)
     n₂ = length(curr_d_nodes)
-    @assert size(A) == (n₁+1+n₂, n₁+1+n₂)
+    @assert size(A) == (n₁max + n₂max, n₁max + n₂max)
 
     # Top-left block (n₁+1 × n₁+1), right column (n₁+1 terms)
     @inbounds for i in 1:n₁
-        A[i,n₁+1] = _rk(kernel, new_node, curr_nodes[i])
+        A[i, n₁+1] = _rk(kernel, new_node, curr_nodes[i])
     end
-    @inbounds A[n₁+1,n₁+1] = _rk(kernel, new_node, new_node)
+    @inbounds A[n₁+1, n₁+1] = _rk(kernel, new_node, new_node)
 
     # Top-right block (n₁+1 × n₂), bottom row (n₂ terms)
     @inbounds for j in 1:n₂
-        A[n₁+1,n₁+1+j] = _∂rk_∂e(kernel, new_node, curr_d_nodes[j], curr_d_dirs[j])
+        A[n₁+1, n₁max+j] = _∂rk_∂e(kernel, new_node, curr_d_nodes[j], curr_d_dirs[j])
     end
 
     return Hermitian(A, :U)
@@ -120,6 +122,8 @@ end
 
 function _gram!(
         A::AbstractMatrix,
+        n₁max::Int,
+        n₂max::Int,
         d_node::SVector{n},
         d_dir::SVector{n},
         curr_nodes::AbstractVecOfSVecs{n},
@@ -129,19 +133,19 @@ function _gram!(
     ) where {n}
     n₁ = length(curr_nodes)
     n₂ = length(curr_d_nodes)
-    @assert size(A) == (n₁+n₂+1, n₁+n₂+1)
+    @assert size(A) == (n₁max + n₂max, n₁max + n₂max)
 
     # Top-right block, (n₁ × n₂+1), right column (n₁ terms)
     @inbounds for i in 1:n₁
-        A[i,end] = _∂rk_∂e(kernel, curr_nodes[i], d_node, d_dir)
+        A[i, n₁max+n₂+1] = _∂rk_∂e(kernel, curr_nodes[i], d_node, d_dir)
     end
 
     # Bottom-right block (n₂+1 × n₂+1), right column (n₂+1 terms)
     ε² = kernel.ε^2
     @inbounds for i in 1:n₂
-        A[n₁+i,end] = _∂²rk_∂²e(kernel, curr_d_nodes[i], d_node, curr_d_dirs[i], d_dir)
+        A[n₁max+i, n₁max+n₂+1] = _∂²rk_∂²e(kernel, d_node, curr_d_nodes[i], d_dir, curr_d_dirs[i])
     end
-    @inbounds A[n₁+n₂+1,end] = ε²
+    @inbounds A[n₁max+n₂+1, n₁max+n₂+1] = ε²
 
     return Hermitian(A, :U)
 end
@@ -165,11 +169,15 @@ Base.parent(C::ElasticCholesky) = C.A
 Base.empty!(C::ElasticCholesky) = (C.ncols[] = 0; C)
 Base.show(io::IO, mime::MIME"text/plain", C::ElasticCholesky{T}) where {T} = (print(io, "ElasticCholesky{T}\nU factor:\n"); show(io, mime, UpperTriangular(C.U[C.colperms[1:C.ncols[]], C.colperms[1:C.ncols[]]])))
 
-function LinearAlgebra.ldiv!(x::AbstractVector{T}, C::ElasticCholesky{T}, b::AbstractVector{T}) where {T}
+function LinearAlgebra.ldiv!(x::AbstractVector{T}, C::ElasticCholesky{T}, b::AbstractVector{T}, ::Val{permview} = Val(false)) where {T, permview}
     @unpack U, U⁻ᵀb, colperms, ncols = C
     J = uview(colperms, 1:ncols[])
     U = UpperTriangular(uview(U, J, J))
     U⁻ᵀb = uview(U⁻ᵀb, 1:ncols[])
+    if permview
+        x = uview(x, J)
+        b = uview(b, J)
+    end
     ldiv!(U⁻ᵀb, U', b)
     ldiv!(x, U, U⁻ᵀb)
     return x

@@ -70,8 +70,8 @@ end
             for j in randperm(n₁)
                 push!(J, j)
                 nhs._gram!(view(A′, J, J), nodes[J[end]], nodes[J[1:end-1]], kernel)
+                @test Hermitian(A′[J,J], :U) ≈ A[J,J] # `A′[J,J]` is upper triangular, `A` is Hermitian
             end
-            Hermitian(A′[J,J], :U) ≈ A[J,J] # `A′[J,J]` is upper triangular, `A` is Hermitian
         end
     end
 
@@ -94,46 +94,78 @@ end
                     push!(J, j)
                     nhs._gram!(view(A′, J, J), d_nodes[J₂[end]], d_dirs[J₂[end]], nodes[J₁], d_nodes[J₂[1:end-1]], d_dirs[J₂[1:end-1]], kernel)
                 end
+                @test Hermitian(A′[J,J], :U) ≈ A[J,J] # `A′[J,J]` is upper triangular, `A` is Hermitian
             end
-            Hermitian(A′[J,J], :U) ≈ A[J,J] # `A′[J,J]` is upper triangular, `A` is Hermitian
         end
     end
 end
 
 @testset "ElasticNormalSpline" begin
     nhs = NormalHermiteSplines
-    max_size = 4
+    max_size = 3
     T = Float64
 
-    for n in 1:3, kernel in [RK_H0(0.5 + rand())] #TODO: RK_H1(0.5 + rand())
+    for n in 1:3
         @unpack min_bound, max_bound, nodes, values, d_nodes, d_dirs, d_values = random_nodes(n, T, max_size)
-        espl = ElasticNormalSpline(min_bound, max_bound, max_size, kernel)
-        C = espl._chol
+        rk_H0 = RK_H0(0.5 + rand())
+        rk_H1 = RK_H1(0.5 + rand())
+        global espl_H0 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H0)
+        global espl_H1_0 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H1)
+        global espl_H1_1 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H1)
 
         for i in 1:max_size
             # Update `ElasticNormalSpline`
-            insert!(espl, nodes[i], values[i])
+            insert!(espl_H0, nodes[i], values[i])
+            insert!(espl_H1_0, nodes[i], values[i])
+            insert!(espl_H1_1, nodes[i], values[i])
+            insert!(espl_H1_1, d_nodes[i], d_dirs[i], d_values[i])
             i == 1 && continue # `NormalSpline` requires at least two nodes
+            # i==1 && (println("\n--------------------------------------------------\n"); continue)
 
             # Compute `NormalSpline`
-            spl = interpolate(nodes[1:i], values[1:i], kernel)
+            global spl_H0  = interpolate(nodes[1:i], values[1:i], rk_H0)
+            global spl_H1_0 = interpolate(nodes[1:i], values[1:i], rk_H1)
+            global spl_H1_1 = interpolate(nodes[1:i], values[1:i], d_nodes[1:i], d_dirs[1:i], d_values[1:i], rk_H1)
+            # # println("NormalSpline: (RK_H1, n₁=$max_size, n₂=$max_size)"); display(UpperTriangular(parent(nhs._get_gram(spl_H1_1)))); println("\n")
+            # println("\n--------------------------------------------------\n")
 
-            J = C.colperms[1:C.ncols[]]
-            b = randn(i)
-            @test nhs._get_kernel(espl)      == nhs._get_kernel(spl)
-            @test nhs._get_nodes(espl)       ≈ nhs._get_nodes(spl)
-            @test nhs._get_values(espl)      ≈ nhs._get_values(spl)
-            @test nhs._get_d_nodes(espl)     ≈ nhs._get_d_nodes(spl)
-            @test nhs._get_d_dirs(espl)      ≈ nhs._get_d_dirs(spl)
-            @test nhs._get_d_values(espl)    ≈ nhs._get_d_values(spl)
-            @test nhs._get_mu(espl)          ≈ nhs._get_mu(spl)
-            @test nhs._get_gram(espl)        ≈ nhs._get_gram(spl)
-            @test UpperTriangular(C.U[J, J]) ≈ nhs._get_chol(spl).U
-            @test ldiv!(similar(b), C, b)    ≈ nhs._get_chol(spl) \ b
-            @test nhs._get_cond(espl)        ≈ nhs._get_cond(spl)
-            @test nhs._get_min_bound(espl)   ≈ nhs._get_min_bound(spl)
-            @test nhs._get_max_bound(espl)   ≈ nhs._get_max_bound(spl)
-            @test nhs._get_scale(espl)       ≈ nhs._get_scale(spl)
+            # println("spl_H1_0"); display(nhs._get_mu(spl_H1_0)'); display(nhs._get_rhs(spl_H1_0)'); println("")
+            # println("espl_H1_0"); display(nhs._get_mu(espl_H1_0)'); display(nhs._get_rhs(espl_H1_0)'); println("")
+
+            # println("spl_H1_1"); display(nhs._get_mu(spl_H1_1)'); display(nhs._get_rhs(spl_H1_1)'); println("")
+            # println("espl_H1_1"); display(nhs._get_mu(espl_H1_1)'); display(nhs._get_rhs(espl_H1_1)'); println("")
+
+            for (espl, spl) in [
+                    (espl_H0, spl_H0)
+                    (espl_H1_0, spl_H1_0)
+                    (espl_H1_1, spl_H1_1)
+                ]
+                C = espl._chol
+                J = C.colperms[1:C.ncols[]]
+                # J = nhs._get_block_indices(espl)
+                b = randn(i)
+                @test nhs._get_kernel(espl)      == nhs._get_kernel(spl)
+                @test nhs._get_nodes(espl)       ≈ nhs._get_nodes(spl)
+                @test nhs._get_values(espl)      ≈ nhs._get_values(spl)
+                @test nhs._get_d_nodes(espl)     ≈ nhs._get_d_nodes(spl)
+                @test nhs._get_d_dirs(espl)      ≈ nhs._get_d_dirs(spl)
+                @test nhs._get_d_values(espl)    ≈ nhs._get_d_values(spl)
+                # @test nhs._get_mu(espl)          ≈ nhs._get_mu(spl)
+                @test nhs._get_gram(espl)        ≈ nhs._get_gram(spl)
+                try
+                    @assert UpperTriangular(C.U[J, J]) ≈ nhs._get_chol(spl).U
+                    # @test cholesky(copy(nhs._get_gram(espl))).U ≈ nhs._get_chol(spl).U
+                catch
+                    @show J'
+                    println("$(typeof(espl))"); display(C.U[J, J]); println("")
+                    println("$(typeof(spl))"); display(nhs._get_chol(spl).U); println("")
+                end
+                # @test ldiv!(similar(b), C, b)    ≈ nhs._get_chol(spl) \ b
+                # @test nhs._get_cond(espl)      ≈ nhs._get_cond(spl)
+                @test nhs._get_min_bound(espl)   ≈ nhs._get_min_bound(spl)
+                @test nhs._get_max_bound(espl)   ≈ nhs._get_max_bound(spl)
+                @test nhs._get_scale(espl)       ≈ nhs._get_scale(spl)
+            end
         end
     end
 end

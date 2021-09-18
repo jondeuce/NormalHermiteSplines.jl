@@ -30,12 +30,13 @@ function _construct!(
     empty!(_get_d_dirs(spl))
     empty!(_get_d_values(spl))
     resize!(_get_mu(spl), n₁)
+    resize!(_get_rhs(spl), n₁)
 
     # Copy values to avoid aliasing
-    _get_values(spl) .= values
+    _get_values(spl) .= _get_rhs(spl) .= values
 
     # Compute spline coefficients
-    ldiv!(_get_mu(spl), _get_chol(spl), _get_values(spl))
+    ldiv!(_get_mu(spl), _get_chol(spl), _get_rhs(spl))
 
     return spl
 end
@@ -77,15 +78,16 @@ function _construct!(
     resize!(_get_d_dirs(spl), n₂)
     resize!(_get_d_values(spl), n₂)
     resize!(_get_mu(spl), n₁+n₂)
+    resize!(_get_rhs(spl), n₁+n₂)
 
     # Copy values to avoid aliasing
-    _get_values(spl) .= values
+    _get_values(spl) .= view(_get_rhs(spl), 1:n₁) .= values
 
     # Nodes scaled down by `scale` -> directional derivative scaled up by `scale`; allocate new array to avoid aliasing
-    _get_d_values(spl) .= _get_scale(spl) .* d_values
+    _get_d_values(spl) .= view(_get_rhs(spl), n₁+1:n₁+n₂) .= _get_scale(spl) .* d_values
 
     # Compute spline coefficients and construct spline
-    ldiv!(_get_mu(spl), _get_chol(spl), [_get_values(spl); _get_d_values(spl)])
+    ldiv!(_get_mu(spl), _get_chol(spl), _get_rhs(spl))
 
     return spl
 end
