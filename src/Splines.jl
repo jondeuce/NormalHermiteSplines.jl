@@ -60,7 +60,6 @@ Base.@kwdef struct ElasticNormalSpline{n, T <: Real, RK <: ReproducingKernel_0} 
     _max_size::Int
     _num_nodes::Base.RefValue{Int}      = Ref(0)
     _num_d_nodes::Base.RefValue{Int}    = Ref(0)
-    _block_indices::Vector{Int}         = zeros(Int, (n+1) * _max_size)
     _nodes::VecOfSVecs{n,T}             = zeros(SVector{n,T}, _max_size)
     _values::Vector{T}                  = zeros(T, _max_size)
     _d_nodes::VecOfSVecs{n,T}           = zeros(SVector{n,T}, n * _max_size)
@@ -70,41 +69,35 @@ Base.@kwdef struct ElasticNormalSpline{n, T <: Real, RK <: ReproducingKernel_0} 
     _rhs::Vector{T}                     = zeros(T, (n+1) * _max_size)
     _gram::Matrix{T}                    = zeros(T, (n+1) * _max_size, (n+1) * _max_size)
     _chol::ElasticCholesky{T,Matrix{T}} = ElasticCholesky{T}((n+1) * _max_size)
+    _filled_columns::Vector{Int}        = zeros(Int, (n+1) * _max_size)
     _min_bound::SVector{n,T}
     _max_bound::SVector{n,T}
     _scale::T
 end
-@inline _get_block_indices(spl::ElasticNormalSpline) = uview(spl._block_indices, 1 : spl._num_nodes[] + spl._num_d_nodes[])
-@inline _get_nodes(spl::ElasticNormalSpline)         = uview(spl._nodes, 1 : spl._num_nodes[])
-@inline _get_values(spl::ElasticNormalSpline)        = uview(spl._values, 1 : spl._num_nodes[])
-@inline _get_d_nodes(spl::ElasticNormalSpline)       = uview(spl._d_nodes, 1 : spl._num_d_nodes[])
-@inline _get_d_dirs(spl::ElasticNormalSpline)        = uview(spl._d_dirs, 1 : spl._num_d_nodes[])
-@inline _get_d_values(spl::ElasticNormalSpline)      = uview(spl._d_values, 1 : spl._num_d_nodes[])
-@inline _get_cond(spl::ElasticNormalSpline)          = _estimate_cond(_get_gram(spl), _get_chol(spl))
-@inline _get_mu(spl::ElasticNormalSpline)            = (J = _get_block_indices(spl); return uview(spl._mu, J))
-@inline _get_rhs(spl::ElasticNormalSpline)           = (J = _get_block_indices(spl); return uview(spl._rhs, J))
-@inline _get_gram(spl::ElasticNormalSpline)          = (J = _get_block_indices(spl); A = uview(spl._gram, J, J); return Hermitian(A, :U))
-
-# @inline _get_block_indices(spl::ElasticNormalSpline{<:Any, <:Any, <:ReproducingKernel_0}) = 1:spl._num_nodes[]
-# @inline function _get_block_indices(spl::ElasticNormalSpline{<:Any, <:Any, <:ReproducingKernel_1})
-#     n₁, n₂ = spl._num_nodes[], spl._num_d_nodes[]
-#     n₁max  = spl._max_size
-#     return [1 : n₁; n₁max + 1 : n₁max + n₂] # can't avoid allocating here unless we add a field to `ElasticNormalSpline`, or perhaps by defining a lazy `vcat` for `UnitRange`s
-# end
-function _insert_block_index!(spl::ElasticNormalSpline, i, v)
-    n₁, n₂ = spl._num_nodes[], spl._num_d_nodes[]
-    J = spl._block_indices
-    last = v
-    for j in i:n₁+n₂+1
-        J[j], last = last, J[j]
-    end
-    return J
-end
-
 function ElasticNormalSpline(min_bound::SVector{n,T}, max_bound::SVector{n,T}, max_size::Int, kernel::RK) where {n, T, RK <: ReproducingKernel_0}
     @assert kernel.ε != 0
     scale = maximum(max_bound .- min_bound)
     ElasticNormalSpline{n,T,RK}(; _kernel = kernel, _max_size = max_size, _min_bound = min_bound, _max_bound = max_bound, _scale = scale)
+end
+
+@inline _get_nodes(spl::ElasticNormalSpline)           = uview(spl._nodes, 1 : spl._num_nodes[])
+@inline _get_values(spl::ElasticNormalSpline)          = uview(spl._values, 1 : spl._num_nodes[])
+@inline _get_d_nodes(spl::ElasticNormalSpline)         = uview(spl._d_nodes, 1 : spl._num_d_nodes[])
+@inline _get_d_dirs(spl::ElasticNormalSpline)          = uview(spl._d_dirs, 1 : spl._num_d_nodes[])
+@inline _get_d_values(spl::ElasticNormalSpline)        = uview(spl._d_values, 1 : spl._num_d_nodes[])
+@inline _get_cond(spl::ElasticNormalSpline)            = _estimate_cond(_get_gram(spl), _get_chol(spl))
+@inline _get_mu(spl::ElasticNormalSpline)              = (J = _get_filled_columns(spl); return uview(spl._mu, J))
+@inline _get_rhs(spl::ElasticNormalSpline)             = (J = _get_filled_columns(spl); return uview(spl._rhs, J))
+@inline _get_gram(spl::ElasticNormalSpline)            = (J = _get_filled_columns(spl); A = uview(spl._gram, J, J); return Hermitian(A, :U))
+@inline _get_filled_columns(spl::ElasticNormalSpline)  = uview(spl._filled_columns, 1 : spl._num_nodes[] + spl._num_d_nodes[])
+@inline _get_insertion_order(spl::ElasticNormalSpline) = uview(_get_chol(spl).colperms, 1 : _get_chol(spl).ncols[])
+
+function insertat!(x::AbstractVector, i, v, len = length(x))
+    last = v
+    @inbounds for j in i:len
+        x[j], last = last, x[j]
+    end
+    return x
 end
 
 function Base.empty!(spl::ElasticNormalSpline)
@@ -135,24 +128,25 @@ function Base.insert!(
         spl._nodes[n₁+1]  = new_node
         spl._values[n₁+1] = new_value
         spl._rhs[n₁+1]    = new_value
-        _insert_block_index!(spl, n₁+1, n₁+1)
+        insertat!(spl._filled_columns, n₁+1, n₁+1, n₁+n₂+1)
         spl._num_nodes[] += 1
     end
 
     # Insert column into position `n₁+1` of Gram matrix
+    inds = _get_filled_columns(spl)
     if RK <: ReproducingKernel_1
-        _gram!(parent(_get_gram(spl)), new_node, curr_nodes, curr_d_nodes, curr_d_dirs, _get_kernel(spl))
+        _gram!(uview(spl._gram, inds, inds), new_node, curr_nodes, curr_d_nodes, curr_d_dirs, _get_kernel(spl))
     else
-        _gram!(parent(_get_gram(spl)), new_node, curr_nodes, _get_kernel(spl))
+        _gram!(uview(spl._gram, inds, inds), new_node, curr_nodes, _get_kernel(spl))
     end
 
-    # Update column `n₁+1` of Cholesky factorization
+    # Insert column `n₁+1` of Gram matrix into Cholesky factorization
     insert!(spl._chol, n₁+1, Hermitian(spl._gram))
     cholesky!(spl._chol, n₁+1)
 
     # Solve for spline coefficients
-    rows = uview(spl._chol.colperms, 1 : spl._chol.ncols[])
-    ldiv!(uview(spl._mu, rows), spl._chol, uview(spl._rhs, rows))
+    inds = _get_insertion_order(spl)
+    ldiv!(uview(spl._mu, inds), spl._chol, uview(spl._rhs, inds))
 
     return nothing
 end
@@ -181,18 +175,60 @@ function Base.insert!(
         spl._d_values[n₂+1]  = new_d_value
         spl._d_dirs[n₂+1]    = new_d_dir
         spl._rhs[n₁max+n₂+1] = new_d_value
-        _insert_block_index!(spl, n₁+n₂+1, n₁max+n₂+1)
+        insertat!(spl._filled_columns, n₁+n₂+1, n₁max+n₂+1, n₁+n₂+1)
         spl._num_d_nodes[]  += 1
     end
 
     # Insert column into position `n₁max+n₂+1` of Gram matrix
-    _gram!(parent(_get_gram(spl)), new_d_node, new_d_dir, curr_nodes, curr_d_nodes, curr_d_dirs, _get_kernel(spl))
+    inds = _get_filled_columns(spl)
+    _gram!(uview(spl._gram, inds, inds), new_d_node, new_d_dir, curr_nodes, curr_d_nodes, curr_d_dirs, _get_kernel(spl))
+
+    # Insert column `n₁max+n₂+1` of Gram matrix into Cholesky factorization
     insert!(spl._chol, n₁max+n₂+1, Hermitian(spl._gram))
     cholesky!(spl._chol, n₁max+n₂+1)
 
     # Solve for spline coefficients
-    rows = uview(spl._chol.colperms, 1 : spl._chol.ncols[])
-    ldiv!(uview(spl._mu, rows), spl._chol, uview(spl._rhs, rows))
+    inds = _get_insertion_order(spl)
+    ldiv!(uview(spl._mu, inds), spl._chol, uview(spl._rhs, inds))
 
     return nothing
+end
+
+function Base.insert!(
+        spl::ElasticNormalSpline{n,T,RK},
+        nodes::AbstractVecOfSVecs{n,T},
+        values::AbstractVector{T},
+    ) where {n, T, RK <: ReproducingKernel_0}
+    @assert length(nodes) == length(values)
+
+    # Insert `n` regular nodes 
+    @inbounds for i in 1:length(nodes)
+        insert!(spl, nodes[i], values[i])
+    end
+
+    return spl
+end
+
+function Base.insert!(
+        spl::ElasticNormalSpline{n,T,RK},
+        nodes::AbstractVecOfSVecs{n,T},
+        values::AbstractVector{T},
+        d_nodes::AbstractVecOfSVecs{n,T},
+        d_dirs::AbstractVecOfSVecs{n,T},
+        d_values::AbstractVector{T},
+    ) where {n, T, RK <: ReproducingKernel_1}
+    @assert length(nodes) == length(values)
+    @assert length(d_nodes) == length(d_dirs) == length(d_values)
+
+    # Insert `n` regular nodes 
+    @inbounds for i in 1:length(nodes)
+        insert!(spl, nodes[i], values[i])
+    end
+
+    # Insert `n` derivative nodes 
+    @inbounds for i in 1:length(d_nodes)
+        insert!(spl, d_nodes[i], d_dirs[i], d_values[i])
+    end
+
+    return spl
 end

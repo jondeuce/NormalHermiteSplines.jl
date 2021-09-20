@@ -48,10 +48,10 @@ function random_nodes(n, T, max_size)
     rand_dir()  = (x = rand_node(); x/norm(x))
 
     nodes     = [min_bound, max_bound, (rand_node() for i in 3:max_size)...]
-    values    = rand(max_size)
+    values    = rand(T, max_size)
     d_nodes   = [rand_node() for _ in 1:n*max_size]
     d_dirs    = [rand_dir() for _ in 1:n*max_size]
-    d_values  = rand(n*max_size)
+    d_values  = rand(T, n*max_size)
     return (; min_bound, max_bound, nodes, values, d_nodes, d_dirs, d_values)
 end
 
