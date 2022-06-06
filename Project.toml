@@ -11,12 +11,16 @@ UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
 UnsafeArrays = "c4a57d5a-5b31-53a6-b365-19f8c011fbd6"
 
 [compat]
+StaticArrays = "1"
+UnPack = "1.0"
+UnsafeArrays = "1.0"
 julia = "1.6"
 
 [extras]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 DoubleFloats = "497a8b3b-efae-58df-a0af-a86822472b78"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["DoubleFloats", "Random", "Test"]
+test = ["Aqua", "DoubleFloats", "Random", "Test"]
