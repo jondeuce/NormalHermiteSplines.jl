@@ -1,6 +1,5 @@
 using Test
 using NormalHermiteSplines
-using NormalHermiteSplines: ElasticCholesky, ElasticNormalSpline
 
 using Aqua
 using DoubleFloats

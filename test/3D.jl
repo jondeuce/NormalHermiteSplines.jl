@@ -10,41 +10,41 @@
     # end
 
     p = [1.0 0.0 0.0 0.0; 0.0 1.0 0.0 0.0; 0.0 0.0 1.0 0.0] # function nodes
-    u = [1.0; 1.0; 1.0; 0.0]                                # function values in nodes
+    u = [1.0; 1.0; 1.0; 0.0] # function values in nodes
+
     n_1 = size(p, 2)
-    dp = Matrix{Float64}(undef, 3, 3*n_1)
-    es = Matrix{Float64}(undef, 3, 3*n_1)
-    du = Vector{Float64}(undef, 3*n_1)
+    dp = Matrix{Float64}(undef, 3, 3 * n_1)
+    es = Matrix{Float64}(undef, 3, 3 * n_1)
+    du = Vector{Float64}(undef, 3 * n_1)
     grad = [1.0; 1.0; 1.0]
 
     k = 0
-    for i = 1:n_1
+    for i in 1:n_1
         k += 1
-        dp[1,k] = p[1,i]
-        dp[2,k] = p[2,i]
-        dp[3,k] = p[3,i]
+        dp[1, k] = p[1, i]
+        dp[2, k] = p[2, i]
+        dp[3, k] = p[3, i]
         du[k] = grad[1]
-        es[1,k] = 1.0
-        es[2,k] = 0.0
-        es[3,k] = 0.0
+        es[1, k] = 1.0
+        es[2, k] = 0.0
+        es[3, k] = 0.0
         k += 1
-        dp[1,k] = p[1,i]
-        dp[2,k] = p[2,i]
-        dp[3,k] = p[3,i]
+        dp[1, k] = p[1, i]
+        dp[2, k] = p[2, i]
+        dp[3, k] = p[3, i]
         du[k] = grad[2]
-        es[1,k] = 0.0
-        es[2,k] = 1.0
-        es[3,k] = 0.0
+        es[1, k] = 0.0
+        es[2, k] = 1.0
+        es[3, k] = 0.0
         k += 1
-        dp[1,k] = p[1,i]
-        dp[2,k] = p[2,i]
-        dp[3,k] = p[3,i]
+        dp[1, k] = p[1, i]
+        dp[2, k] = p[2, i]
+        dp[3, k] = p[3, i]
         du[k] = grad[3]
-        es[1,k] = 0.0
-        es[2,k] = 0.0
-        es[3,k] = 1.0
+        es[1, k] = 0.0
+        es[2, k] = 0.0
+        es[3, k] = 1.0
     end
-    ####
 
     @testset "Test 3D-RK_H0 kernel" begin
         s = interpolate(p, u, RK_H0(0.00001))
@@ -118,7 +118,7 @@
         σ1 = evaluate_one(s, [1.0; 0.0; 0.01])
         @test isapprox(σ1, u[1], atol = 2e-2)
         σ = evaluate(s, [1.0 0.5; 0.0 0.5; 0.01 0.5])
-        @test isapprox(σ[1], u[1], atol =2e-2)
+        @test isapprox(σ[1], u[1], atol = 2e-2)
 
         g = evaluate_gradient(s, [0.01; 0.2; 0.3])
         @test all(isapprox.(g, grad, atol = 0.01))
@@ -138,5 +138,4 @@
         est_eps = estimate_epsilon(p, dp)
         @test isapprox(est_eps, 1.415, atol = 1e-3)
     end
-
 end

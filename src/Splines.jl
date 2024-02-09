@@ -1,7 +1,7 @@
-abstract type AbstractNormalSpline{n,T,RK} end
+abstract type AbstractNormalSpline{n, T, RK} end
 
-Base.ndims(::AbstractNormalSpline{n,T,RK}) where {n,T,RK} = n
-Base.eltype(::AbstractNormalSpline{n,T,RK}) where {n,T,RK} = T
+Base.ndims(::AbstractNormalSpline{n, T, RK}) where {n, T, RK} = n
+Base.eltype(::AbstractNormalSpline{n, T, RK}) where {n, T, RK} = T
 
 @inline _get_kernel(spl::AbstractNormalSpline)    = spl._kernel
 @inline _get_nodes(spl::AbstractNormalSpline)     = spl._nodes
@@ -38,59 +38,59 @@ Define a structure containing full information of a normal spline
 - `_max_bound`: maximal bounds of the original node locations area
 - `_scale`: factor of transforming the original node locations into unit hypercube
 "
-Base.@kwdef struct NormalSpline{n, T <: Real, RK <: ReproducingKernel_0} <: AbstractNormalSpline{n,T,RK}
-    _kernel::RK
-    _nodes::VecOfSVecs{n,T}
-    _values::Vector{T}        = zeros(T, 0)
-    _d_nodes::VecOfSVecs{n,T} = zeros(SVector{n,T}, 0)
-    _d_dirs::VecOfSVecs{n,T}  = zeros(SVector{n,T}, 0)
-    _d_values::Vector{T}      = zeros(T, 0)
-    _mu::Vector{T}            = zeros(T, 0)
-    _rhs::Vector{T}           = zeros(T, 0)
-    _gram::Hermitian{T, Matrix{T}}
-    _chol::Cholesky{T, Matrix{T}}
-    _cond::T
-    _min_bound::SVector{n,T}
-    _max_bound::SVector{n,T}
-    _scale::T
+Base.@kwdef struct NormalSpline{n, T <: Real, RK <: ReproducingKernel_0} <: AbstractNormalSpline{n, T, RK}
+    _kernel                    :: RK
+    _nodes                     :: VecOfSVecs{n, T}
+    _values::Vector{T}         = zeros(T, 0)
+    _d_nodes::VecOfSVecs{n, T} = zeros(SVector{n, T}, 0)
+    _d_dirs::VecOfSVecs{n, T}  = zeros(SVector{n, T}, 0)
+    _d_values::Vector{T}       = zeros(T, 0)
+    _mu::Vector{T}             = zeros(T, 0)
+    _rhs::Vector{T}            = zeros(T, 0)
+    _gram                      :: Hermitian{T, Matrix{T}}
+    _chol                      :: Cholesky{T, Matrix{T}}
+    _cond                      :: T
+    _min_bound                 :: SVector{n, T}
+    _max_bound                 :: SVector{n, T}
+    _scale                     :: T
 end
 
-Base.@kwdef struct ElasticNormalSpline{n, T <: Real, RK <: ReproducingKernel_0} <: AbstractNormalSpline{n,T,RK}
-    _kernel::RK
-    _max_size::Int
-    _num_nodes::Base.RefValue{Int}      = Ref(0)
-    _num_d_nodes::Base.RefValue{Int}    = Ref(0)
-    _nodes::VecOfSVecs{n,T}             = zeros(SVector{n,T}, _max_size)
-    _values::Vector{T}                  = zeros(T, _max_size)
-    _d_nodes::VecOfSVecs{n,T}           = zeros(SVector{n,T}, n * _max_size)
-    _d_dirs::VecOfSVecs{n,T}            = zeros(SVector{n,T}, n * _max_size)
-    _d_values::Vector{T}                = zeros(T, n * _max_size)
-    _mu::Vector{T}                      = zeros(T, (n+1) * _max_size)
-    _rhs::Vector{T}                     = zeros(T, (n+1) * _max_size)
-    _gram::Matrix{T}                    = zeros(T, (n+1) * _max_size, (n+1) * _max_size)
-    _chol::ElasticCholesky{T,Matrix{T}} = ElasticCholesky{T}((n+1) * _max_size)
-    _filled_columns::Vector{Int}        = zeros(Int, (n+1) * _max_size)
-    _min_bound::SVector{n,T}
-    _max_bound::SVector{n,T}
-    _scale::T
+Base.@kwdef struct ElasticNormalSpline{n, T <: Real, RK <: ReproducingKernel_0} <: AbstractNormalSpline{n, T, RK}
+    _kernel                              :: RK
+    _max_size                            :: Int
+    _num_nodes::Base.RefValue{Int}       = Ref(0)
+    _num_d_nodes::Base.RefValue{Int}     = Ref(0)
+    _nodes::VecOfSVecs{n, T}             = zeros(SVector{n, T}, _max_size)
+    _values::Vector{T}                   = zeros(T, _max_size)
+    _d_nodes::VecOfSVecs{n, T}           = zeros(SVector{n, T}, n * _max_size)
+    _d_dirs::VecOfSVecs{n, T}            = zeros(SVector{n, T}, n * _max_size)
+    _d_values::Vector{T}                 = zeros(T, n * _max_size)
+    _mu::Vector{T}                       = zeros(T, (n + 1) * _max_size)
+    _rhs::Vector{T}                      = zeros(T, (n + 1) * _max_size)
+    _gram::Matrix{T}                     = zeros(T, (n + 1) * _max_size, (n + 1) * _max_size)
+    _chol::ElasticCholesky{T, Matrix{T}} = ElasticCholesky{T}((n + 1) * _max_size)
+    _filled_columns::Vector{Int}         = zeros(Int, (n + 1) * _max_size)
+    _min_bound                           :: SVector{n, T}
+    _max_bound                           :: SVector{n, T}
+    _scale                               :: T
 end
-function ElasticNormalSpline(min_bound::SVector{n,T}, max_bound::SVector{n,T}, max_size::Int, kernel::RK) where {n, T, RK <: ReproducingKernel_0}
+function ElasticNormalSpline(min_bound::SVector{n, T}, max_bound::SVector{n, T}, max_size::Int, kernel::RK) where {n, T, RK <: ReproducingKernel_0}
     @assert kernel.ε != 0
     scale = maximum(max_bound .- min_bound)
-    ElasticNormalSpline{n,T,RK}(; _kernel = kernel, _max_size = max_size, _min_bound = min_bound, _max_bound = max_bound, _scale = scale)
+    return ElasticNormalSpline{n, T, RK}(; _kernel = kernel, _max_size = max_size, _min_bound = min_bound, _max_bound = max_bound, _scale = scale)
 end
 
-@inline _get_nodes(spl::ElasticNormalSpline)           = uview(spl._nodes, 1 : spl._num_nodes[])
-@inline _get_values(spl::ElasticNormalSpline)          = uview(spl._values, 1 : spl._num_nodes[])
-@inline _get_d_nodes(spl::ElasticNormalSpline)         = uview(spl._d_nodes, 1 : spl._num_d_nodes[])
-@inline _get_d_dirs(spl::ElasticNormalSpline)          = uview(spl._d_dirs, 1 : spl._num_d_nodes[])
-@inline _get_d_values(spl::ElasticNormalSpline)        = uview(spl._d_values, 1 : spl._num_d_nodes[])
+@inline _get_nodes(spl::ElasticNormalSpline)           = uview(spl._nodes, 1:spl._num_nodes[])
+@inline _get_values(spl::ElasticNormalSpline)          = uview(spl._values, 1:spl._num_nodes[])
+@inline _get_d_nodes(spl::ElasticNormalSpline)         = uview(spl._d_nodes, 1:spl._num_d_nodes[])
+@inline _get_d_dirs(spl::ElasticNormalSpline)          = uview(spl._d_dirs, 1:spl._num_d_nodes[])
+@inline _get_d_values(spl::ElasticNormalSpline)        = uview(spl._d_values, 1:spl._num_d_nodes[])
 @inline _get_cond(spl::ElasticNormalSpline)            = _estimate_cond(_get_gram(spl), _get_chol(spl))
 @inline _get_mu(spl::ElasticNormalSpline)              = (J = _get_filled_columns(spl); return uview(spl._mu, J))
 @inline _get_rhs(spl::ElasticNormalSpline)             = (J = _get_filled_columns(spl); return uview(spl._rhs, J))
 @inline _get_gram(spl::ElasticNormalSpline)            = (J = _get_filled_columns(spl); A = uview(spl._gram, J, J); return Hermitian(A, :U))
-@inline _get_filled_columns(spl::ElasticNormalSpline)  = uview(spl._filled_columns, 1 : spl._num_nodes[] + spl._num_d_nodes[])
-@inline _get_insertion_order(spl::ElasticNormalSpline) = uview(_get_chol(spl).colperms, 1 : _get_chol(spl).ncols[])
+@inline _get_filled_columns(spl::ElasticNormalSpline)  = uview(spl._filled_columns, 1:spl._num_nodes[]+spl._num_d_nodes[])
+@inline _get_insertion_order(spl::ElasticNormalSpline) = uview(_get_chol(spl).colperms, 1:_get_chol(spl).ncols[])
 
 function insertat!(x::AbstractVector, i, v, len = length(x))
     last = v
@@ -108,10 +108,10 @@ function Base.empty!(spl::ElasticNormalSpline)
 end
 
 function Base.insert!(
-        spl::ElasticNormalSpline{n,T,RK},
-        node::SVector{n,T},
-        value::T,
-    ) where {n, T, RK <: ReproducingKernel_0}
+    spl::ElasticNormalSpline{n, T, RK},
+    node::SVector{n, T},
+    value::T,
+) where {n, T, RK <: ReproducingKernel_0}
 
     n₁, n₂ = spl._num_nodes[], spl._num_d_nodes[]
     n₁max  = spl._max_size
@@ -128,7 +128,7 @@ function Base.insert!(
         spl._nodes[n₁+1]  = new_node
         spl._values[n₁+1] = new_value
         spl._rhs[n₁+1]    = new_value
-        insertat!(spl._filled_columns, n₁+1, n₁+1, n₁+n₂+1)
+        insertat!(spl._filled_columns, n₁ + 1, n₁ + 1, n₁ + n₂ + 1)
         spl._num_nodes[] += 1
     end
 
@@ -141,8 +141,8 @@ function Base.insert!(
     end
 
     # Insert column `n₁+1` of Gram matrix into Cholesky factorization
-    insert!(spl._chol, n₁+1, Hermitian(spl._gram))
-    cholesky!(spl._chol, n₁+1)
+    insert!(spl._chol, n₁ + 1, Hermitian(spl._gram))
+    cholesky!(spl._chol, n₁ + 1)
 
     # Solve for spline coefficients
     inds = _get_insertion_order(spl)
@@ -152,11 +152,11 @@ function Base.insert!(
 end
 
 function Base.insert!(
-        spl::ElasticNormalSpline{n,T,RK},
-        d_node::SVector{n},
-        d_dir::SVector{n},
-        d_value::T,
-    ) where {n, T, RK <: ReproducingKernel_1}
+    spl::ElasticNormalSpline{n, T, RK},
+    d_node::SVector{n},
+    d_dir::SVector{n},
+    d_value::T,
+) where {n, T, RK <: ReproducingKernel_1}
 
     n₁, n₂ = spl._num_nodes[], spl._num_d_nodes[]
     n₁max  = spl._max_size
@@ -175,8 +175,8 @@ function Base.insert!(
         spl._d_values[n₂+1]  = new_d_value
         spl._d_dirs[n₂+1]    = new_d_dir
         spl._rhs[n₁max+n₂+1] = new_d_value
-        insertat!(spl._filled_columns, n₁+n₂+1, n₁max+n₂+1, n₁+n₂+1)
-        spl._num_d_nodes[]  += 1
+        insertat!(spl._filled_columns, n₁ + n₂ + 1, n₁max + n₂ + 1, n₁ + n₂ + 1)
+        spl._num_d_nodes[] += 1
     end
 
     # Insert column into position `n₁max+n₂+1` of Gram matrix
@@ -184,8 +184,8 @@ function Base.insert!(
     _gram!(uview(spl._gram, inds, inds), new_d_node, new_d_dir, curr_nodes, curr_d_nodes, curr_d_dirs, _get_kernel(spl))
 
     # Insert column `n₁max+n₂+1` of Gram matrix into Cholesky factorization
-    insert!(spl._chol, n₁max+n₂+1, Hermitian(spl._gram))
-    cholesky!(spl._chol, n₁max+n₂+1)
+    insert!(spl._chol, n₁max + n₂ + 1, Hermitian(spl._gram))
+    cholesky!(spl._chol, n₁max + n₂ + 1)
 
     # Solve for spline coefficients
     inds = _get_insertion_order(spl)
@@ -195,10 +195,10 @@ function Base.insert!(
 end
 
 function Base.insert!(
-        spl::ElasticNormalSpline{n,T,RK},
-        nodes::AbstractVecOfSVecs{n,T},
-        values::AbstractVector{T},
-    ) where {n, T, RK <: ReproducingKernel_0}
+    spl::ElasticNormalSpline{n, T, RK},
+    nodes::AbstractVecOfSVecs{n, T},
+    values::AbstractVector{T},
+) where {n, T, RK <: ReproducingKernel_0}
     @assert length(nodes) == length(values)
 
     # Insert `n` regular nodes
@@ -210,13 +210,13 @@ function Base.insert!(
 end
 
 function Base.insert!(
-        spl::ElasticNormalSpline{n,T,RK},
-        nodes::AbstractVecOfSVecs{n,T},
-        values::AbstractVector{T},
-        d_nodes::AbstractVecOfSVecs{n,T},
-        d_dirs::AbstractVecOfSVecs{n,T},
-        d_values::AbstractVector{T},
-    ) where {n, T, RK <: ReproducingKernel_1}
+    spl::ElasticNormalSpline{n, T, RK},
+    nodes::AbstractVecOfSVecs{n, T},
+    values::AbstractVector{T},
+    d_nodes::AbstractVecOfSVecs{n, T},
+    d_dirs::AbstractVecOfSVecs{n, T},
+    d_values::AbstractVector{T},
+) where {n, T, RK <: ReproducingKernel_1}
     @assert length(nodes) == length(values)
     @assert length(d_nodes) == length(d_dirs) == length(d_values)
 

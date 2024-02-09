@@ -17,8 +17,14 @@ V(\eta , \xi, \varepsilon) = \exp (-\varepsilon |\xi - \eta|) \, .
 struct RK_H0{T} <: ReproducingKernel_0
     ε::T
     RK_H0() = new{Float64}(0.0)
-    RK_H0(ε) = (@assert ε > 0; new{typeof(float(ε))}(float(ε)))
-    RK_H0{T}(ε) where {T} = (@assert ε > 0; new{T}(T(ε)))
+    function RK_H0(ε)
+        @assert ε > 0
+        return new{typeof(float(ε))}(float(ε))
+    end
+    function RK_H0{T}(ε) where {T}
+        @assert ε > 0
+        return new{T}(T(ε))
+    end
 end
 Base.eltype(::RK_H0{T}) where {T} = T
 
@@ -37,8 +43,14 @@ V(\eta , \xi, \varepsilon) = \exp (-\varepsilon |\xi - \eta|)
 struct RK_H1{T} <: ReproducingKernel_1
     ε::T
     RK_H1() = new{Float64}(0.0)
-    RK_H1(ε) = (@assert ε > 0; new{typeof(float(ε))}(float(ε)))
-    RK_H1{T}(ε) where {T} = (@assert ε > 0; new{T}(T(ε)))
+    function RK_H1(ε)
+        @assert ε > 0
+        return new{typeof(float(ε))}(float(ε))
+    end
+    function RK_H1{T}(ε) where {T}
+        @assert ε > 0
+        return new{T}(T(ε))
+    end
 end
 Base.eltype(::RK_H1{T}) where {T} = T
 
@@ -57,8 +69,14 @@ V(\eta , \xi, \varepsilon) = \exp (-\varepsilon |\xi - \eta|)
 struct RK_H2{T} <: ReproducingKernel_2
     ε::T
     RK_H2() = new{Float64}(0.0)
-    RK_H2(ε) = (@assert ε > 0; new{typeof(float(ε))}(float(ε)))
-    RK_H2{T}(ε) where {T} = (@assert ε > 0; new{T}(T(ε)))
+    function RK_H2(ε)
+        @assert ε > 0
+        return new{typeof(float(ε))}(float(ε))
+    end
+    function RK_H2{T}(ε) where {T}
+        @assert ε > 0
+        return new{T}(T(ε))
+    end
 end
 Base.eltype(::RK_H2{T}) where {T} = T
 
@@ -108,8 +126,9 @@ end
     x    = kernel.ε * tnrm
     ∇    = kernel.ε * exp(-x)
     t    = ifelse(x > eps(typeof(x)), t, zeros(t))
-    ∇   *= ifelse(x > eps(typeof(x)), inv(tnrm), one(tnrm))
-    ∇   *= t
+    ∇    *= ifelse(x > eps(typeof(x)), inv(tnrm), one(tnrm))
+    ∇    *= t
+    return ∇
 end
 
 @inline function _∂²rk_∂²e(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}, êη::SVector{n}, êξ::SVector{n}) where {n}
@@ -120,7 +139,8 @@ end
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
     ∇²    = ((1 + x) * ε²e⁻ˣ) * (êξ ⋅ êη)
-    ∇²   -= (ε² * ε²e⁻ˣ) * (êξ ⋅ t) * (t ⋅ êη)
+    ∇²    -= (ε² * ε²e⁻ˣ) * (êξ ⋅ t) * (t ⋅ êη)
+    return ∇²
 end
 
 @inline function _∂²rk_∂²e(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}, êη::SVector{n}, êξ::SVector{n}) where {n}
@@ -132,7 +152,8 @@ end
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
     ∇²    = ε²e⁻ˣ * (êξ ⋅ êη)
-    ∇²   -= ifelse(x > eps(typeof(x)), (ε * ε²e⁻ˣ / tnrm) * (êξ ⋅ t) * (t ⋅ êη), zero(∇²))
+    ∇²    -= ifelse(x > eps(typeof(x)), (ε * ε²e⁻ˣ / tnrm) * (êξ ⋅ t) * (t ⋅ êη), zero(∇²))
+    return ∇²
 end
 
 @inline function _∂²rk_∂η∂ξ(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}) where {n}
@@ -142,9 +163,10 @@ end
     tnrm  = norm(t)
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
-    S     = SMatrix{n,n,typeof(x)}
+    S     = SMatrix{n, n, typeof(x)}
     ∇²    = S(((1 + x) * ε²e⁻ˣ) * LinearAlgebra.I)
-    ∇²   -= ((ε² * ε²e⁻ˣ) * t) * t'
+    ∇²    -= ((ε² * ε²e⁻ˣ) * t) * t'
+    return ∇²
 end
 
 @inline function _∂²rk_∂η∂ξ(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}) where {n}
@@ -155,7 +177,8 @@ end
     tnrm  = norm(t)
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
-    S     = SMatrix{n,n,typeof(x)}
+    S     = SMatrix{n, n, typeof(x)}
     ∇²    = S(ε²e⁻ˣ * LinearAlgebra.I)
-    ∇²   -= ifelse(x > eps(typeof(x)), ((ε * ε²e⁻ˣ / tnrm) * t) * t', zeros(S))
+    ∇²    -= ifelse(x > eps(typeof(x)), ((ε * ε²e⁻ˣ / tnrm) * t) * t', zeros(S))
+    return ∇²
 end

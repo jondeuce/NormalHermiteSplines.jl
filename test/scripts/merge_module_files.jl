@@ -1,9 +1,10 @@
-using LibGit2
+using LibGit2: LibGit2
+
+const pkg_folder = normpath(@__DIR__, "../..")
+const src_folder = joinpath(pkg_folder, "src")
+const test_folder = joinpath(pkg_folder, "test")
 
 function mergefiles(mainfile, depfiles)
-    pkg_folder = normpath(@__DIR__, "../..")
-    src_folder = joinpath(pkg_folder, "src")
-
     repo = LibGit2.GitRepo(pkg_folder)
     hash = LibGit2.GitHash(LibGit2.peel(LibGit2.GitCommit, LibGit2.head(repo))) |> string
 
@@ -32,37 +33,45 @@ function mergefiles(mainfile, depfiles)
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     =#
 
-    $(readchomp(joinpath(src_folder, mainfile)))
+    $(readchomp(mainfile))
     """
     for (i, depfile) in enumerate(depfiles)
         maybenewline = i == length(depfiles) ? "" : "\n"
         main = replace(
             main,
-            "include(\"./$(depfile)\")" => chomp(
+            "include(\"$(basename(depfile))\")" => chomp(
                 """
                 ####
-                #### $(depfile)
+                #### $(basename(depfile))
                 ####
 
-                $(readchomp(joinpath(src_folder, depfile)))
-                """
-            ) * maybenewline
+                $(readchomp(depfile))
+                """,
+            ) * maybenewline,
         )
     end
     return main
 end
 
-mainfile = "NormalHermiteSplines.jl"
-depfiles = [
-    "ReproducingKernels.jl",
-    "GramMatrix.jl",
-    "Splines.jl",
-    "Utils.jl",
-    "Interpolate.jl",
+for (dir, (mainfile, depfiles)) in [
+    src_folder => "NormalHermiteSplines.jl" => [
+        "ReproducingKernels.jl",
+        "GramMatrix.jl",
+        "Splines.jl",
+        "Utils.jl",
+        "Interpolate.jl",
+    ]
+    test_folder => "runtests.jl" => [
+        "1D.jl",
+        "2D.jl",
+        "3D.jl",
+        "elastic.jl",
+    ]
 ]
-
-outfile = isempty(ARGS) ? joinpath(pwd(), mainfile) : ARGS[1]
-open(outfile; write = true) do io
-    # Make sure we write 64bit integer in little-endian byte order
-    write(io, mergefiles(mainfile, depfiles))
+    outdir = isempty(ARGS) ? pwd() : ARGS[1]
+    outfile = joinpath(outdir, mainfile)
+    open(outfile; write = true) do io
+        # Make sure we write 64bit integer in little-endian byte order
+        return write(io, mergefiles(joinpath(dir, mainfile), joinpath.(dir, depfiles)))
+    end
 end

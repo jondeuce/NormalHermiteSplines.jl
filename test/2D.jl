@@ -1,13 +1,12 @@
 @testset "Test 2D" begin
-
-    p = [0. 0. 1. 1. 0.5;  0. 1. 0. 1. 0.5] # nodes
-    u = [0.0; 0.0; 0.0; 0.0; 1.0]   # function values in nodes
-    u2 = [0.0; 0.0; 0.0; 0.0; 2.0]  # second function values in nodes
-    t = [0.5 0.5 0.499999; 0.5 0.499999 0.5]  # evaluation points
+    p = [0.0 0.0 1.0 1.0 0.5; 0.0 1.0 0.0 1.0 0.5] # nodes
+    u = [0.0; 0.0; 0.0; 0.0; 1.0] # function values in nodes
+    u2 = [0.0; 0.0; 0.0; 0.0; 2.0] # second function values in nodes
+    t = [0.5 0.5 0.499999; 0.5 0.499999 0.5] # evaluation points
 
     dp = [0.5 0.5; 0.5 0.5]
     es = [1.0 0.0; 0.0 1.0]
-    du = [0.; 100000.0]
+    du = [0.0; 100000.0]
 
     @testset "Test 2D-RK_H0 kernel" begin
         rk = RK_H0(0.001)
@@ -17,7 +16,7 @@
         @test isapprox(σ[2], u[5], atol = 1e-5)
         @test isapprox(σ[3], u[5], atol = 1e-5)
 
-        σ1 = evaluate_one(s, t[:,1])
+        σ1 = evaluate_one(s, t[:, 1])
         @test σ1[1] ≈ u[5]
 
         rk = RK_H0()
@@ -55,7 +54,7 @@
         @test isapprox(σ[2], u[5], atol = 1e-5)
         @test isapprox(σ[3], u[5], atol = 1e-5)
 
-        grad = evaluate_gradient(s, p[:,5])
+        grad = evaluate_gradient(s, p[:, 5])
         @test abs(grad[1]) < 1.0e-5 && abs(grad[2]) < 1.0e-5
 
         rk = RK_H1()
@@ -83,17 +82,16 @@
         eps = get_epsilon(s)
         @test est_eps ≈ 1.94 atol = 1e-2
 
-###
         eps = 0.0001
         rk = RK_H1(eps)
         s = interpolate(p, u, dp, es, du, rk)
         cond = estimate_cond(s)
         @test cond == 1.0e14
 
-        σ1 = evaluate_one(s, p[:,5])
-        @test !isapprox(σ1[1], u[5], atol = 0.1)
+        σ1 = evaluate_one(s, p[:, 5])
+        @test !isapprox(σ1[1], u[5]; atol = 0.1)
 
-# Same test with extended precision
+        # Same test with extended precision
         rk = RK_H1(Double64(eps))
         p = Double64.(p)
         dp = Double64.(dp)
@@ -111,14 +109,14 @@
     end
 
     @testset "Test 2D-RK_H2 kernel" begin
-        p = [0. 0. 1. 1. 0.5;  0. 1. 0. 1. 0.5] # nodes
-        u = [0.0; 0.0; 0.0; 0.0; 1.0]   # function values in nodes
-        u2 = [0.0; 0.0; 0.0; 0.0; 2.0]  # second function values in nodes
-        t = [0.5 0.5 0.499999; 0.5 0.499999 0.5]  # evaluation points
+        p = [0.0 0.0 1.0 1.0 0.5; 0.0 1.0 0.0 1.0 0.5] # nodes
+        u = [0.0; 0.0; 0.0; 0.0; 1.0] # function values in nodes
+        u2 = [0.0; 0.0; 0.0; 0.0; 2.0] # second function values in nodes
+        t = [0.5 0.5 0.499999; 0.5 0.499999 0.5] # evaluation points
 
         dp = [0.5 0.5; 0.5 0.5]
         es = [1.0 0.0; 0.0 1.0]
-        du = [0.; 100000.0]
+        du = [0.0; 100000.0]
 
         rk = RK_H2(0.01)
         s = interpolate(p, u, rk)
@@ -130,7 +128,7 @@
         @test isapprox(σ[2], u[5], atol = 1e-5)
         @test isapprox(σ[3], u[5], atol = 1e-5)
 
-        grad = evaluate_gradient(s, p[:,5])
+        grad = evaluate_gradient(s, p[:, 5])
         @test abs(grad[1]) < 1.0e-5 && abs(grad[2]) < 1.0e-5
 
         rk = RK_H2()
@@ -150,20 +148,20 @@
         @test isapprox(σ[1], u[5], atol = 1e-5)
         @test isapprox(σ2[2], u2[5], atol = 1e-5)
         @test isapprox(σ2[3], u2[5], atol = 1e-5)
-###
+
         eps = 0.01
         rk = RK_H2(eps)
         s = interpolate(p, u, dp, es, du, rk)
         cond = estimate_cond(s)
         @test cond == 1.0e13
 
-        σ1 = evaluate_one(s, p[:,5])
-        @test !isapprox(σ1[1], u[5], atol = 0.1)
+        σ1 = evaluate_one(s, p[:, 5])
+        @test !isapprox(σ1[1], u[5]; atol = 0.1)
 
         q = estimate_accuracy(s)
         @test q == 0
 
-# Same tests with extended precision
+        # Same tests with extended precision
         rk = RK_H2(Double64(eps))
         p = Double64.(p)
         dp = Double64.(dp)
@@ -183,20 +181,18 @@
 end
 
 @testset "Test 2D-Bis" begin
-
     p = collect([-1.0 2.0; -1.0 4.0; 3.0 2.0; 3.0 4.0; 1.0 3.0]') # function nodes
-    u = [0.0; 0.0; 0.0; 0.0; 1.0]                        # function values in nodes
-
-    t = collect([-1.0 3.0; 0.0 3.0; 1.0 3.0; 2.0 3.0; 3.0 3.0]')  # evaluation points
+    u = [0.0; 0.0; 0.0; 0.0; 1.0] # function values in nodes
+    t = collect([-1.0 3.0; 0.0 3.0; 1.0 3.0; 2.0 3.0; 3.0 3.0]') # evaluation points
 
     @testset "Test 2D-Bis-RK_H0 kernel" begin
-        spl = prepare(p, RK_H0(0.001))                   # prepare spline
-        c = estimate_cond(spl)                                # get estimation of the problem's Gram matrix condition number
+        spl = prepare(p, RK_H0(0.001)) # prepare spline
+        c = estimate_cond(spl) # get estimation of the problem's Gram matrix condition number
         @test c ≈ 100000.0
 
-        spl = construct(spl, u)                          # construct spline
+        spl = construct(spl, u) # construct spline
         vt = [1.0, 3.0]
-        σ = evaluate_one(spl, vt)                            # evaluate spline in the node
+        σ = evaluate_one(spl, vt) # evaluate spline in the node
         @test σ ≈ 1.0
 
         wt = [0.0, 3.0]
@@ -207,7 +203,7 @@ end
         σ2 = evaluate_one(spl, wt)
         @test σ2 ≈ 2.0 * σ1
 
-        spl = interpolate(p, u, RK_H0(0.001))            # prepare and construct spline
+        spl = interpolate(p, u, RK_H0(0.001)) # prepare and construct spline
         σ = evaluate_one(spl, vt)
         @test σ ≈ 1.0
     end
@@ -260,33 +256,35 @@ end
 end
 
 @testset "Test 2D-Grad" begin
-        p = collect([0.0 0.0; 1.0 0.0; 0.0 1.0]') # function nodes
-        u = [0.0; 0.0; 1.0]                       # function values in nodes
-        t = [0.5; 0.5]                            # evaluation points
-        p2 = collect([0.0 0.0; 2.0 0.0; 0.0 2.0]') # function nodes
-        u2 = [0.0; 0.0; 2.0]                       # function values in nodes
-        t2 = [1.0; 1.0]                            # evaluation points
-        @testset "Test 2D-Grad-RK_H1 kernel" begin
-            spl = interpolate(p, u, RK_H1(0.001))
-            grad = evaluate_gradient(spl, t)
-            @test abs(grad[1] + 1.0) ≈ 1.0 atol = 1e-2
-            @test abs(grad[2]) ≈ 1.0 atol = 1e-2
+    p = collect([0.0 0.0; 1.0 0.0; 0.0 1.0]') # function nodes
+    u = [0.0; 0.0; 1.0] # function values in nodes
+    t = [0.5; 0.5] # evaluation points
 
-            spl = interpolate(p2, u2, RK_H1(0.001))
-            grad = evaluate_gradient(spl, t2)
-            @test abs(grad[1] + 1.0) ≈ 1.0 atol = 1e-2
-            @test abs(grad[2]) ≈ 1.0 atol = 1e-2
-        end
+    p2 = collect([0.0 0.0; 2.0 0.0; 0.0 2.0]') # function nodes
+    u2 = [0.0; 0.0; 2.0] # function values in nodes
+    t2 = [1.0; 1.0] # evaluation points
 
-        @testset "Test 2D-Grad-RK_H2 kernel" begin
-            spl = interpolate(p, u, RK_H2(0.001))
-            grad = evaluate_gradient(spl, t)
-            @test abs(grad[1] + 1.0) ≈ 1.0 atol = 1e-4
-            @test abs(grad[2]) ≈ 1.0 atol = 1e-4
+    @testset "Test 2D-Grad-RK_H1 kernel" begin
+        spl = interpolate(p, u, RK_H1(0.001))
+        grad = evaluate_gradient(spl, t)
+        @test abs(grad[1] + 1.0) ≈ 1.0 atol = 1e-2
+        @test abs(grad[2]) ≈ 1.0 atol = 1e-2
 
-            spl = interpolate(p2, u2, RK_H2(0.001))
-            grad = evaluate_gradient(spl, t2)
-            @test abs(grad[1] + 1.0) ≈ 1.0 atol = 1e-4
-            @test abs(grad[2]) ≈ 1.0 atol = 1e-4
-        end
+        spl = interpolate(p2, u2, RK_H1(0.001))
+        grad = evaluate_gradient(spl, t2)
+        @test abs(grad[1] + 1.0) ≈ 1.0 atol = 1e-2
+        @test abs(grad[2]) ≈ 1.0 atol = 1e-2
+    end
+
+    @testset "Test 2D-Grad-RK_H2 kernel" begin
+        spl = interpolate(p, u, RK_H2(0.001))
+        grad = evaluate_gradient(spl, t)
+        @test abs(grad[1] + 1.0) ≈ 1.0 atol = 1e-4
+        @test abs(grad[2]) ≈ 1.0 atol = 1e-4
+
+        spl = interpolate(p2, u2, RK_H2(0.001))
+        grad = evaluate_gradient(spl, t2)
+        @test abs(grad[1] + 1.0) ≈ 1.0 atol = 1e-4
+        @test abs(grad[2]) ≈ 1.0 atol = 1e-4
+    end
 end
