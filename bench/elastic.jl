@@ -11,7 +11,6 @@ using BenchmarkTools
 using LinearAlgebra
 using Random
 using StaticArrays
-using UnPack
 
 function random_nodes(::Val{n} = 2, ::Type{T} = Float64; max_size) where {n,T}
     min_bound   = -rand(SVector{n,T})
@@ -29,7 +28,7 @@ end
 
 function bench_insertion(::Val{n} = Val(2), ::Type{T} = Float64) where {n,T}
     for max_size in [8,16,32]
-        @unpack min_bound, max_bound, nodes, values, d_nodes, d_dirs, d_values = random_nodes(Val(n), T; max_size = max_size)
+        (; min_bound, max_bound, nodes, values, d_nodes, d_dirs, d_values) = random_nodes(Val(n), T; max_size = max_size)
         rk_H0 = RK_H0(T(0.5 + rand()))
         rk_H1 = RK_H1(T(0.5 + rand()))
         espl_H0 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H0)

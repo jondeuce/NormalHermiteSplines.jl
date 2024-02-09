@@ -64,7 +64,7 @@ end
         kernel = RK_H0(0.5 + rand())
         for n in 1:3
             # Test incremental building of Gram matrix, inserting nodes in random order
-            @unpack nodes = random_nodes(n, T, max_size)
+            (; nodes) = random_nodes(n, T, max_size)
             n₁ = length(nodes)
             A  = nhs._gram(nodes, kernel)
             A′ = zeros(T, n₁, n₁)
@@ -81,7 +81,7 @@ end
         kernel = RK_H1(0.5 + rand())
         for n in 1:3
             # Test incremental building of Gram matrix, inserting (derivative-)nodes in random order
-            @unpack nodes, d_nodes, d_dirs = random_nodes(n, T, max_size)
+            (; nodes, d_nodes, d_dirs) = random_nodes(n, T, max_size)
             n₁, n₂ = length(nodes), length(d_nodes)
             A  = nhs._gram(nodes, d_nodes, d_dirs, kernel)
             A′ = zeros(T, n₁+n₂, n₁+n₂)
@@ -108,7 +108,7 @@ end
     T = Float64
 
     for n in 1:3
-        @unpack min_bound, max_bound, nodes, values, d_nodes, d_dirs, d_values = random_nodes(n, T, max_size)
+        (; min_bound, max_bound, nodes, values, d_nodes, d_dirs, d_values) = random_nodes(n, T, max_size)
         rk_H0 = RK_H0(0.5 + rand())
         rk_H1 = RK_H1(0.5 + rand())
         espl_H0 = ElasticNormalSpline(min_bound, max_bound, max_size, rk_H0)
@@ -124,7 +124,7 @@ end
             insert!(espl_H0, nodes′[i], values′[i])
             insert!(espl_H1_0, nodes′[i], values′[i])
 
-            # Insert `n` derivative nodes 
+            # Insert `n` derivative nodes
             insert!(espl_H1_1, nodes′[i], values′[i])
             for k in n*(i-1).+(1:n)
                 insert!(espl_H1_1, d_nodes′[k], d_dirs′[k], d_values′[k])

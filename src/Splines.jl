@@ -201,7 +201,7 @@ function Base.insert!(
     ) where {n, T, RK <: ReproducingKernel_0}
     @assert length(nodes) == length(values)
 
-    # Insert `n` regular nodes 
+    # Insert `n` regular nodes
     @inbounds for i in 1:length(nodes)
         insert!(spl, nodes[i], values[i])
     end
@@ -220,12 +220,12 @@ function Base.insert!(
     @assert length(nodes) == length(values)
     @assert length(d_nodes) == length(d_dirs) == length(d_values)
 
-    # Insert `n` regular nodes 
+    # Insert `n` regular nodes
     @inbounds for i in 1:length(nodes)
         insert!(spl, nodes[i], values[i])
     end
 
-    # Insert `n` derivative nodes 
+    # Insert `n` derivative nodes
     @inbounds for i in 1:length(d_nodes)
         insert!(spl, d_nodes[i], d_dirs[i], d_values[i])
     end

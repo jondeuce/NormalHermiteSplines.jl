@@ -5,10 +5,9 @@ export evaluate, evaluate!, evaluate_one, evaluate_gradient, evaluate_derivative
 export NormalSpline, RK_H0, RK_H1, RK_H2
 export get_epsilon, estimate_epsilon, get_cond, estimate_cond, estimate_accuracy
 
-using LinearAlgebra
-using StaticArrays
-using UnPack
-using UnsafeArrays
+using LinearAlgebra: LinearAlgebra, Cholesky, Factorization, Hermitian, UpperTriangular, cholesky, cholesky!, ldiv!, norm, ⋅
+using StaticArrays: StaticArrays, SMatrix, SVector
+using UnsafeArrays: UnsafeArrays, uview
 
 const AbstractArrOfSVecs{n,T,N} = AbstractArray{SVector{n,T},N}
 const AbstractVecOfSVecs{n,T} = AbstractVector{SVector{n,T}}
@@ -17,11 +16,11 @@ const VecOfSVecs{n,T} = Vector{SVector{n,T}}
 @inline svectors(x::AbstractMatrix{T}) where {T} = reinterpret(reshape, SVector{size(x,1),T}, x)
 @inline svectors(x::AbstractVector{T}) where {T} = reinterpret(SVector{1,T}, x)
 
-include("./ReproducingKernels.jl")
-include("./GramMatrix.jl")
-include("./Splines.jl")
-include("./Utils.jl")
-include("./Interpolate.jl")
+include("ReproducingKernels.jl")
+include("GramMatrix.jl")
+include("Splines.jl")
+include("Utils.jl")
+include("Interpolate.jl")
 
 ####
 #### Public API

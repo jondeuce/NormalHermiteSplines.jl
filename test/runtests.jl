@@ -7,7 +7,6 @@ using DoubleFloats
 using LinearAlgebra
 using Random
 using StaticArrays
-using UnPack
 
 @testset "NormalHermiteSplines.jl" begin
     include("1D.jl")

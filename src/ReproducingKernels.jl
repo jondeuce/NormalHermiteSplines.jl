@@ -143,7 +143,7 @@ end
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
     S     = SMatrix{n,n,typeof(x)}
-    ∇²    = S(((1 + x) * ε²e⁻ˣ) * I)
+    ∇²    = S(((1 + x) * ε²e⁻ˣ) * LinearAlgebra.I)
     ∇²   -= ((ε² * ε²e⁻ˣ) * t) * t'
 end
 
@@ -156,6 +156,6 @@ end
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
     S     = SMatrix{n,n,typeof(x)}
-    ∇²    = S(ε²e⁻ˣ * I)
+    ∇²    = S(ε²e⁻ˣ * LinearAlgebra.I)
     ∇²   -= ifelse(x > eps(typeof(x)), ((ε * ε²e⁻ˣ / tnrm) * t) * t', zeros(S))
 end
