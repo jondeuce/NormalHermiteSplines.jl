@@ -46,7 +46,7 @@ end
 function _pairwise_sum_norms(nodes::AbstractVecOfSVecs{n, T}) where {n, T}
     ℓ = zero(T)
     @inbounds for i in 1:length(nodes), j in i:length(nodes)
-        ℓ += norm(nodes[i] .- nodes[j])
+        ℓ += _norm(nodes[i] - nodes[j])
     end
     return ℓ
 end
@@ -54,7 +54,7 @@ end
 function _pairwise_sum_norms_weighted(nodes::AbstractVecOfSVecs{n, T}, d_nodes::AbstractVecOfSVecs{n, T}, w_d_nodes::T) where {n, T}
     ℓ = zero(T)
     @inbounds for i in 1:length(nodes), j in 1:length(d_nodes)
-        ℓ += norm(nodes[i] .- w_d_nodes .* d_nodes[j])
+        ℓ += _norm(nodes[i] - w_d_nodes * d_nodes[j])
     end
     return ℓ
 end
@@ -124,7 +124,7 @@ function _get_gram(nodes::AbstractVecOfSVecs, d_nodes::AbstractVecOfSVecs, d_dir
     min_bound, max_bound, scale = _normalization_scaling(nodes, d_nodes)
     nodes = _normalize.(nodes, (min_bound,), (max_bound,), scale)
     d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), scale)
-    d_dirs = d_dirs ./ norm.(d_dirs)
+    d_dirs = d_dirs ./ _norm.(d_dirs)
     if kernel.ε == 0
         kernel = _estimate_ε(kernel, nodes, d_nodes)
     end

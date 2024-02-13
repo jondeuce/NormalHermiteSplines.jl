@@ -48,7 +48,7 @@ function _prepare(nodes::AbstractVecOfSVecs{n, T}, d_nodes::AbstractVecOfSVecs{n
     min_bound, max_bound, scale = _normalization_scaling(nodes, d_nodes)
     nodes = _normalize.(nodes, (min_bound,), (max_bound,), scale)
     d_nodes = _normalize.(d_nodes, (min_bound,), (max_bound,), scale)
-    d_dirs = d_dirs ./ norm.(d_dirs)
+    d_dirs = d_dirs ./ _norm.(d_dirs)
 
     if kernel.ε == 0
         kernel = _estimate_ε(kernel, nodes, d_nodes)

@@ -168,7 +168,7 @@ function Base.insert!(
     curr_d_nodes = _get_d_nodes(spl)
     curr_d_dirs  = _get_d_dirs(spl)
     new_d_node   = _normalize(spl, d_node)
-    new_d_dir    = d_dir / norm(d_dir)
+    new_d_dir    = d_dir / _norm(d_dir)
     new_d_value  = _get_scale(spl) * d_value
     @inbounds begin
         spl._d_nodes[n₂+1]   = new_d_node

@@ -80,49 +80,52 @@ struct RK_H2{T} <: ReproducingKernel_2
 end
 Base.eltype(::RK_H2{T}) where {T} = T
 
-@inline function _rk(kernel::RK_H2, η::SVector, ξ::SVector)
-    x = kernel.ε * norm(η - ξ)
+@inline _norm(x::SVector) = norm(x)
+@inline _norm(x::SVector{1}) = abs(x[1])
+
+@inline @fastmath function _rk(kernel::RK_H2, η::SVector, ξ::SVector)
+    x = kernel.ε * _norm(η - ξ)
     return (3 + x * (3 + x)) * exp(-x)
 end
 
-@inline function _rk(kernel::RK_H1, η::SVector, ξ::SVector)
-    x = kernel.ε * norm(η - ξ)
+@inline @fastmath function _rk(kernel::RK_H1, η::SVector, ξ::SVector)
+    x = kernel.ε * _norm(η - ξ)
     return (1 + x) * exp(-x)
 end
 
-@inline function _rk(kernel::RK_H0, η::SVector, ξ::SVector)
-    x = kernel.ε * norm(η - ξ)
+@inline @fastmath function _rk(kernel::RK_H0, η::SVector, ξ::SVector)
+    x = kernel.ε * _norm(η - ξ)
     return exp(-x)
 end
 
-@inline function _∂rk_∂e(kernel::RK_H2, η::SVector, ξ::SVector, e::SVector)
+@inline @fastmath function _∂rk_∂e(kernel::RK_H2, η::SVector, ξ::SVector, e::SVector)
     t = η - ξ
-    x = kernel.ε * norm(t)
+    x = kernel.ε * _norm(t)
     return kernel.ε^2 * exp(-x) * (1 + x) * (t ⋅ e)
 end
 
-@inline function _∂rk_∂e(kernel::RK_H1, η::SVector, ξ::SVector, e::SVector)
+@inline @fastmath function _∂rk_∂e(kernel::RK_H1, η::SVector, ξ::SVector, e::SVector)
     t = η - ξ
-    x = kernel.ε * norm(t)
+    x = kernel.ε * _norm(t)
     return kernel.ε^2 * exp(-x) * (t ⋅ e)
 end
 
-@inline function _∂rk_∂η(kernel::RK_H2, η::SVector, ξ::SVector)
+@inline @fastmath function _∂rk_∂η(kernel::RK_H2, η::SVector, ξ::SVector)
     t = η - ξ
-    x = kernel.ε * norm(t)
+    x = kernel.ε * _norm(t)
     return -kernel.ε^2 * exp(-x) * (1 + x) * t
 end
 
-@inline function _∂rk_∂η(kernel::RK_H1, η::SVector, ξ::SVector)
+@inline @fastmath function _∂rk_∂η(kernel::RK_H1, η::SVector, ξ::SVector)
     t = η - ξ
-    x = kernel.ε * norm(t)
+    x = kernel.ε * _norm(t)
     return -kernel.ε^2 * exp(-x) * t
 end
 
-@inline function _∂rk_∂η(kernel::RK_H0, η::SVector, ξ::SVector)
+@inline @fastmath function _∂rk_∂η(kernel::RK_H0, η::SVector, ξ::SVector)
     # Note: Derivative of spline built with reproducing kernel RK_H0 does not exist at the spline nodes
     t    = η - ξ
-    tnrm = norm(t)
+    tnrm = _norm(t)
     x    = kernel.ε * tnrm
     ∇    = kernel.ε * exp(-x)
     t    = ifelse(x > eps(typeof(x)), t, zeros(t))
@@ -131,11 +134,11 @@ end
     return ∇
 end
 
-@inline function _∂²rk_∂²e(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}, êη::SVector{n}, êξ::SVector{n}) where {n}
+@inline @fastmath function _∂²rk_∂²e(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}, êη::SVector{n}, êξ::SVector{n}) where {n}
     ε     = kernel.ε
     ε²    = ε * ε
     t     = η - ξ
-    tnrm  = norm(t)
+    tnrm  = _norm(t)
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
     ∇²    = ((1 + x) * ε²e⁻ˣ) * (êξ ⋅ êη)
@@ -143,12 +146,12 @@ end
     return ∇²
 end
 
-@inline function _∂²rk_∂²e(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}, êη::SVector{n}, êξ::SVector{n}) where {n}
+@inline @fastmath function _∂²rk_∂²e(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}, êη::SVector{n}, êξ::SVector{n}) where {n}
     # Note: Second derivative of spline built with reproducing kernel RK_H1 does not exist at the spline nodes
     ε     = kernel.ε
     ε²    = ε * ε
     t     = η - ξ
-    tnrm  = norm(t)
+    tnrm  = _norm(t)
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
     ∇²    = ε²e⁻ˣ * (êξ ⋅ êη)
@@ -156,11 +159,11 @@ end
     return ∇²
 end
 
-@inline function _∂²rk_∂η∂ξ(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}) where {n}
+@inline @fastmath function _∂²rk_∂η∂ξ(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}) where {n}
     ε     = kernel.ε
     ε²    = ε * ε
     t     = η - ξ
-    tnrm  = norm(t)
+    tnrm  = _norm(t)
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
     S     = SMatrix{n, n, typeof(x)}
@@ -169,12 +172,12 @@ end
     return ∇²
 end
 
-@inline function _∂²rk_∂η∂ξ(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}) where {n}
+@inline @fastmath function _∂²rk_∂η∂ξ(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}) where {n}
     # Note: Second derivative of spline built with reproducing kernel RK_H1 does not exist at the spline nodes
     ε     = kernel.ε
     ε²    = ε * ε
     t     = η - ξ
-    tnrm  = norm(t)
+    tnrm  = _norm(t)
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
     S     = SMatrix{n, n, typeof(x)}
