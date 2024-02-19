@@ -94,18 +94,18 @@ end
 
 #### Evaluation
 
-@inline function _evaluate!(
+function _evaluate!(
     vals::AbstractArray{<:Any, N},
     spl::AbstractNormalSpline{n, <:Any, <:ReproducingKernel_0},
     points::AbstractArrOfSVecs{n, <:Any, N},
 ) where {n, N}
-    @inbounds for i in 1:length(points)
+    @inbounds for i in eachindex(vals, points)
         vals[i] = _evaluate(spl, points[i])
     end
     return vals
 end
 
-@inline function _evaluate(
+function _evaluate(
     spl::AbstractNormalSpline{n, <:Any, RK},
     x::SVector{n},
 ) where {n, RK <: ReproducingKernel_0}
@@ -114,19 +114,20 @@ end
     n₁ = length(nodes)
     n₂ = length(d_nodes)
     x = _normalize(spl, x)
-    v = zero(promote_type(eltype(spl), eltype(kernel), eltype(x)))
+    T = promote_type(eltype(spl), eltype(kernel), eltype(x))
+    v = zero(T)
     @inbounds for i in 1:n₁
         v += mu[i] * _rk(kernel, x, nodes[i])
     end
     if RK <: ReproducingKernel_1
         @inbounds for i in 1:n₂
-            v += mu[i+n₁] * _∂rk_∂e(kernel, x, d_nodes[i], d_dirs[i])
+            v -= mu[i+n₁] * _∂rk_∂ηⁱ_ûᵢ(kernel, x, d_nodes[i], d_dirs[i])
         end
     end
     return v
 end
 
-@inline function _evaluate_gradient(
+function _evaluate_gradient(
     spl::AbstractNormalSpline{n, <:Any, RK},
     x::SVector{n},
 ) where {n, RK <: ReproducingKernel_0}
@@ -135,15 +136,44 @@ end
     n₁ = length(nodes)
     n₂ = length(d_nodes)
     x = _normalize(spl, x)
-    ∇ = zero(SVector{n, promote_type(eltype(spl), eltype(kernel), eltype(x))})
+    T = promote_type(eltype(spl), eltype(kernel), eltype(x))
+    ∇ = zero(SVector{n, T})
     @inbounds for i in 1:n₁
         ∇ += mu[i] * _∂rk_∂η(kernel, x, nodes[i])
     end
     if RK <: ReproducingKernel_1
         @inbounds for i in 1:n₂
-            ∇² = _∂²rk_∂η∂ξ(kernel, x, d_nodes[i])
-            ∇ += mu[i+n₁] * (∇² * d_dirs[i])
+            ∇ += mu[i+n₁] * _∂²rk_∂ηⁱ∂ξ_ûᵢ(kernel, x, d_nodes[i], d_dirs[i])
         end
     end
     return ∇ ./ scale
+end
+
+function _evaluate_with_gradient(
+    spl::AbstractNormalSpline{n, <:Any, RK},
+    x::SVector{n},
+) where {n, RK <: ReproducingKernel_0}
+    kernel, nodes, d_nodes, d_dirs, mu, scale =
+        _get_kernel(spl), _get_nodes(spl), _get_d_nodes(spl), _get_d_dirs(spl), _get_mu(spl), _get_scale(spl)
+    n₁ = length(nodes)
+    n₂ = length(d_nodes)
+    x = _normalize(spl, x)
+    T = promote_type(eltype(spl), eltype(kernel), eltype(x))
+    v = zero(T)
+    ∇ = zero(SVector{n, T})
+    @inbounds for i in 1:n₁
+        μ = mu[i]
+        vᵢ, ∇ᵢ = _rk_with_∂rk_∂η(kernel, x, nodes[i])
+        v += μ * vᵢ
+        ∇ += μ * ∇ᵢ
+    end
+    if RK <: ReproducingKernel_1
+        @inbounds for i in 1:n₂
+            μ = mu[i+n₁]
+            vᵢ, ∇ᵢ = _∂rk_∂ηⁱ_ûᵢ_with_∂²rk_∂ηⁱ∂ξ_ûᵢ(kernel, x, d_nodes[i], d_dirs[i])
+            v -= μ * vᵢ
+            ∇ += μ * ∇ᵢ
+        end
+    end
+    return v, ∇ ./ scale
 end

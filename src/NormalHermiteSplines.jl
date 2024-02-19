@@ -6,11 +6,12 @@ export NormalSpline, ElasticCholesky, ElasticNormalSpline, RK_H0, RK_H1, RK_H2
 export get_epsilon, estimate_epsilon, get_cond, estimate_cond, estimate_accuracy
 
 using LinearAlgebra: LinearAlgebra, Cholesky, Factorization, Hermitian, UpperTriangular, cholesky, cholesky!, ldiv!, norm, ⋅
+using MuladdMacro: @muladd
 using StaticArrays: StaticArrays, SMatrix, SVector
 using UnsafeArrays: UnsafeArrays, uview
 
-const AbstractArrOfSVecs{n, T, N} = AbstractArray{SVector{n, T}, N}
-const AbstractVecOfSVecs{n, T} = AbstractVector{SVector{n, T}}
+const AbstractArrOfSVecs{n, T, D} = AbstractArray{S, D} where {S <: SVector{n, T}}
+const AbstractVecOfSVecs{n, T} = AbstractArrOfSVecs{n, T, 1}
 const VecOfSVecs{n, T} = Vector{SVector{n, T}}
 
 @inline svectors(x::AbstractMatrix{T}) where {T} = reinterpret(reshape, SVector{size(x, 1), T}, x)
@@ -121,16 +122,17 @@ Evaluate the spline values at the locations defined in `points`.
 
   - `Vector{T}` of the spline values at the locations defined in `points`.
 """
-@inline function evaluate(spline::AbstractNormalSpline{n, T, RK}, points::AbstractMatrix{T}) where {n, T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate(spline::AbstractNormalSpline{n, T1, RK}, points::AbstractMatrix{T2}) where {n, T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
     return evaluate(spline, svectors(points))
 end
-@inline function evaluate(spline::AbstractNormalSpline{n, T, RK}, points::AbstractArrOfSVecs{n, T}) where {n, T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate(spline::AbstractNormalSpline{n, T1, RK}, points::AbstractArrOfSVecs{n, T2}) where {n, T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
+    T = promote_type(T1, eltype(RK), T2)
     return evaluate!(zeros(T, size(points)), spline, points)
 end
-@inline function evaluate!(spline_values::AbstractArray{T, N}, spline::AbstractNormalSpline{n, T, RK}, points::AbstractArrOfSVecs{n, T, N}) where {n, T <: Real, N, RK <: ReproducingKernel_0}
+@inline function evaluate!(spline_values::AbstractArray{<:Any, D}, spline::AbstractNormalSpline{n, T1, RK}, points::AbstractArrOfSVecs{n, T2, D}) where {n, D, T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
     return _evaluate!(spline_values, spline, points)
 end
-@inline function evaluate(spline::AbstractNormalSpline{n, T, RK}, point::SVector{n, T}) where {n, T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate(spline::AbstractNormalSpline{n, T1, RK}, point::SVector{n, T2}) where {n, T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
     return _evaluate(spline, point)
 end
 
@@ -149,10 +151,11 @@ Evaluate the spline value at the `point` location.
 
   - The spline value at the location defined in `point`.
 """
-@inline function evaluate_one(spline::AbstractNormalSpline{n, T, RK}, point::AbstractVector{T}) where {n, T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate_one(spline::AbstractNormalSpline{n, T1, RK}, point::AbstractVector{T2}) where {n, T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
+    T = promote_type(T1, eltype(RK), T2)
     return evaluate_one(spline, SVector{n, T}(ntuple(i -> point[i], n)))
 end
-@inline function evaluate_one(spline::AbstractNormalSpline{n, T, RK}, point::SVector{n, T}) where {n, T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate_one(spline::AbstractNormalSpline{n, T1, RK}, point::SVector{n, T2}) where {n, T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
     return evaluate(spline, point)
 end
 
@@ -173,10 +176,11 @@ Note: Gradient of spline built with reproducing kernel RK_H0 does not exist at t
 
   - `Vector{T}` - gradient of the spline at the location defined in `point`.
 """
-@inline function evaluate_gradient(spline::AbstractNormalSpline{n, T, RK}, point::AbstractVector{T}) where {n, T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate_gradient(spline::AbstractNormalSpline{n, T1, RK}, point::AbstractVector{T2}) where {n, T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
+    T = promote_type(T1, eltype(RK), T2)
     return evaluate_gradient(spline, SVector{n, T}(ntuple(i -> point[i], n)))
 end
-@inline function evaluate_gradient(spline::AbstractNormalSpline{n, T, RK}, point::SVector{n, T}) where {n, T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate_gradient(spline::AbstractNormalSpline{n, T1, RK}, point::SVector{n, T2}) where {n, T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
     return _evaluate_gradient(spline, point)
 end
 
@@ -338,12 +342,12 @@ Evaluate the 1D spline values/value at the `points` locations.
 
   - Spline value at the `point` location.
 """
-@inline function evaluate(spline::AbstractNormalSpline{n, T, RK}, points::AbstractVector{T}) where {n, T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate(spline::AbstractNormalSpline{n, T1, RK}, points::AbstractVector{T2}) where {n, T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
     return evaluate(spline, svectors(points))
 end
 
 """
-`evaluate_one(spline::AbstractNormalSpline{1,T,RK}, point::T) where {T <: Real, RK <: ReproducingKernel_0}`
+`evaluate(spline::AbstractNormalSpline{1,T,RK}, point::T) where {T <: Real, RK <: ReproducingKernel_0}`
 
 Evaluate the 1D spline value at the `point` location.
 
@@ -356,7 +360,8 @@ Evaluate the 1D spline value at the `point` location.
 
   - Spline value at the `point` location.
 """
-@inline function evaluate_one(spline::AbstractNormalSpline{1, T, RK}, point::T) where {T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate(spline::AbstractNormalSpline{1, T1, RK}, point::T2) where {T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
+    T = promote_type(T1, eltype(RK), T2)
     return evaluate(spline, SVector{1, T}((point,)))
 end
 
@@ -376,7 +381,8 @@ Note: Derivative of spline built with reproducing kernel RK_H0 does not exist at
 
   - The spline derivative value at the `point` location.
 """
-@inline function evaluate_derivative(spline::AbstractNormalSpline{1, T, RK}, point::T) where {T <: Real, RK <: ReproducingKernel_0}
+@inline function evaluate_derivative(spline::AbstractNormalSpline{1, T1, RK}, point::T2) where {T1 <: Real, T2 <: Real, RK <: ReproducingKernel_0}
+    T = promote_type(T1, eltype(RK), T2)
     return evaluate_gradient(spline, SVector{1, T}((point,)))[1]
 end
 

@@ -23,7 +23,7 @@
         # compare spline values with exact function values in evaluation point
         @test all(isapprox.(σ, f, atol = 0.05))
 
-        σ = evaluate_one(spl, p[3])
+        σ = evaluate(spl, p[3])
         @test σ ≈ f[3] atol = 0.05
     end
 
@@ -61,7 +61,7 @@
 
         spl = prepare(x, s, RK_H1(0.1))
         spl = construct(spl, u, v)
-        σ = evaluate_one(spl, p[3])
+        σ = evaluate(spl, p[3])
         @test σ ≈ f[3] atol = 0.05
     end
 

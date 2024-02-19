@@ -65,12 +65,12 @@ function _gram!(
     @inbounds for j in 1:n₂
         # Top-right block (n₁ × n₂)
         for i in 1:n₁
-            A12[i, j] = _∂rk_∂e(kernel, nodes[i], d_nodes[j], d_dirs[j])
+            A12[i, j] = -_∂rk_∂ηⁱ_ûᵢ(kernel, nodes[i], d_nodes[j], d_dirs[j])
         end
 
         # Bottom-right block (n₂ × n₂)
         for i in 1:j-1
-            A22[i, j] = _∂²rk_∂²e(kernel, d_nodes[j], d_nodes[i], d_dirs[j], d_dirs[i])
+            A22[i, j] = _∂²rk_∂ηⁱ∂ξʲ_ûᵢ_v̂ⱼ(kernel, d_nodes[j], d_nodes[i], d_dirs[j], d_dirs[i])
         end
         A22[j, j] = ε²
     end
@@ -112,7 +112,7 @@ function _gram!(
 
     # Top-right block (n₁+1 × n₂), bottom row (n₂ terms)
     @inbounds for j in 1:n₂
-        A[n₁+1, n₁+1+j] = _∂rk_∂e(kernel, new_node, curr_d_nodes[j], curr_d_dirs[j])
+        A[n₁+1, n₁+1+j] = -_∂rk_∂ηⁱ_ûᵢ(kernel, new_node, curr_d_nodes[j], curr_d_dirs[j])
     end
 
     return Hermitian(A, :U)
@@ -133,13 +133,13 @@ function _gram!(
 
     # Top-right block, (n₁ × n₂+1), right column (n₁ terms)
     @inbounds for i in 1:n₁
-        A[i, n₁+n₂+1] = _∂rk_∂e(kernel, curr_nodes[i], d_node, d_dir)
+        A[i, n₁+n₂+1] = -_∂rk_∂ηⁱ_ûᵢ(kernel, curr_nodes[i], d_node, d_dir)
     end
 
     # Bottom-right block (n₂+1 × n₂+1), right column (n₂+1 terms)
     ε² = kernel.ε^2
     @inbounds for i in 1:n₂
-        A[n₁+i, n₁+n₂+1] = _∂²rk_∂²e(kernel, d_node, curr_d_nodes[i], d_dir, curr_d_dirs[i])
+        A[n₁+i, n₁+n₂+1] = _∂²rk_∂ηⁱ∂ξʲ_ûᵢ_v̂ⱼ(kernel, d_node, curr_d_nodes[i], d_dir, curr_d_dirs[i])
     end
     @inbounds A[n₁+n₂+1, n₁+n₂+1] = ε²
 
@@ -204,7 +204,7 @@ A⁺ = [A  d]
 Then, the corresponding updated cholesky factor `L⁺` of `⁺` is:
 
 ```
-L⁺ = [L  e]
+L⁺ = [L  0]
      [eᵀ α]
 ```
 

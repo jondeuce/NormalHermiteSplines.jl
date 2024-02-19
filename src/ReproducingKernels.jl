@@ -27,6 +27,7 @@ struct RK_H0{T} <: ReproducingKernel_0
     end
 end
 Base.eltype(::RK_H0{T}) where {T} = T
+Base.eltype(::Type{RK_H0{T}}) where {T} = T
 
 @doc raw"
 `struct RK_H1{T} <: ReproducingKernel_1`
@@ -53,6 +54,7 @@ struct RK_H1{T} <: ReproducingKernel_1
     end
 end
 Base.eltype(::RK_H1{T}) where {T} = T
+Base.eltype(::Type{RK_H1{T}}) where {T} = T
 
 @doc raw"
 `struct RK_H2{T} <: ReproducingKernel_2`
@@ -79,109 +81,193 @@ struct RK_H2{T} <: ReproducingKernel_2
     end
 end
 Base.eltype(::RK_H2{T}) where {T} = T
+Base.eltype(::Type{RK_H2{T}}) where {T} = T
 
 @inline _norm(x::SVector) = norm(x)
 @inline _norm(x::SVector{1}) = abs(x[1])
 
-@inline @fastmath function _rk(kernel::RK_H2, η::SVector, ξ::SVector)
+@inline @fastmath @muladd function _rk(kernel::RK_H2, η::SVector, ξ::SVector)
     x = kernel.ε * _norm(η - ξ)
     return (3 + x * (3 + x)) * exp(-x)
 end
 
-@inline @fastmath function _rk(kernel::RK_H1, η::SVector, ξ::SVector)
+@inline @fastmath @muladd function _rk(kernel::RK_H1, η::SVector, ξ::SVector)
     x = kernel.ε * _norm(η - ξ)
     return (1 + x) * exp(-x)
 end
 
-@inline @fastmath function _rk(kernel::RK_H0, η::SVector, ξ::SVector)
+@inline @fastmath @muladd function _rk(kernel::RK_H0, η::SVector, ξ::SVector)
     x = kernel.ε * _norm(η - ξ)
     return exp(-x)
 end
 
-@inline @fastmath function _∂rk_∂e(kernel::RK_H2, η::SVector, ξ::SVector, e::SVector)
+@inline @fastmath @muladd function _∂rk_∂ηⁱ_ûᵢ(kernel::RK_H2, η::SVector, ξ::SVector, û::SVector)
     t = η - ξ
     x = kernel.ε * _norm(t)
-    return kernel.ε^2 * exp(-x) * (1 + x) * (t ⋅ e)
+    return -kernel.ε^2 * exp(-x) * (1 + x) * (t ⋅ û)
 end
 
-@inline @fastmath function _∂rk_∂e(kernel::RK_H1, η::SVector, ξ::SVector, e::SVector)
+@inline @fastmath @muladd function _∂rk_∂ηⁱ_ûᵢ(kernel::RK_H1, η::SVector, ξ::SVector, û::SVector)
     t = η - ξ
     x = kernel.ε * _norm(t)
-    return kernel.ε^2 * exp(-x) * (t ⋅ e)
+    return -kernel.ε^2 * exp(-x) * (t ⋅ û)
 end
 
-@inline @fastmath function _∂rk_∂η(kernel::RK_H2, η::SVector, ξ::SVector)
+@inline @fastmath @muladd function _∂rk_∂ηⁱ_ûᵢ(kernel::RK_H0, η::SVector, ξ::SVector, û::SVector)
+    t     = η - ξ
+    tnrm  = _norm(t)
+    itnrm = ifelse(tnrm > eps(typeof(tnrm)), inv(tnrm), zero(tnrm))
+    x     = kernel.ε * tnrm
+    return -kernel.ε * exp(-x) * itnrm * (t ⋅ û)
+end
+
+@inline @fastmath @muladd function _∂rk_∂η(kernel::RK_H2, η::SVector, ξ::SVector)
     t = η - ξ
     x = kernel.ε * _norm(t)
     return -kernel.ε^2 * exp(-x) * (1 + x) * t
 end
 
-@inline @fastmath function _∂rk_∂η(kernel::RK_H1, η::SVector, ξ::SVector)
+@inline @fastmath @muladd function _∂rk_∂η(kernel::RK_H1, η::SVector, ξ::SVector)
     t = η - ξ
     x = kernel.ε * _norm(t)
     return -kernel.ε^2 * exp(-x) * t
 end
 
-@inline @fastmath function _∂rk_∂η(kernel::RK_H0, η::SVector, ξ::SVector)
-    # Note: Derivative of spline built with reproducing kernel RK_H0 does not exist at the spline nodes
-    t    = η - ξ
-    tnrm = _norm(t)
-    x    = kernel.ε * tnrm
-    ∇    = kernel.ε * exp(-x)
-    t    = ifelse(x > eps(typeof(x)), t, zeros(t))
-    ∇    *= ifelse(x > eps(typeof(x)), inv(tnrm), one(tnrm))
-    ∇    *= t
+@inline @fastmath @muladd function _∂rk_∂η(kernel::RK_H0, η::SVector, ξ::SVector)
+    # Note: Derivative of spline built with reproducing kernel RK_H0 is discontinuous at the spline nodes, i.e. when η = ξ.
+    t     = η - ξ
+    tnrm  = _norm(t)
+    itnrm = ifelse(tnrm > eps(typeof(tnrm)), inv(tnrm), zero(tnrm))
+    x     = kernel.ε * tnrm
+    ∇     = (-kernel.ε * exp(-x) * itnrm) * t
     return ∇
 end
 
-@inline @fastmath function _∂²rk_∂²e(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}, êη::SVector{n}, êξ::SVector{n}) where {n}
-    ε     = kernel.ε
-    ε²    = ε * ε
-    t     = η - ξ
-    tnrm  = _norm(t)
-    x     = ε * tnrm
-    ε²e⁻ˣ = ε² * exp(-x)
-    ∇²    = ((1 + x) * ε²e⁻ˣ) * (êξ ⋅ êη)
-    ∇²    -= (ε² * ε²e⁻ˣ) * (êξ ⋅ t) * (t ⋅ êη)
-    return ∇²
+@inline @fastmath @muladd function _rk_with_∂rk_∂η(kernel::RK_H2, η::SVector, ξ::SVector)
+    t   = η - ξ
+    x   = kernel.ε * _norm(t)
+    e⁻ˣ = exp(-x)
+    y   = (3 + x * (3 + x)) * e⁻ˣ
+    ∇   = -kernel.ε^2 * e⁻ˣ * (1 + x) * t
+    return y, ∇
 end
 
-@inline @fastmath function _∂²rk_∂²e(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}, êη::SVector{n}, êξ::SVector{n}) where {n}
-    # Note: Second derivative of spline built with reproducing kernel RK_H1 does not exist at the spline nodes
-    ε     = kernel.ε
-    ε²    = ε * ε
-    t     = η - ξ
-    tnrm  = _norm(t)
-    x     = ε * tnrm
-    ε²e⁻ˣ = ε² * exp(-x)
-    ∇²    = ε²e⁻ˣ * (êξ ⋅ êη)
-    ∇²    -= ifelse(x > eps(typeof(x)), (ε * ε²e⁻ˣ / tnrm) * (êξ ⋅ t) * (t ⋅ êη), zero(∇²))
-    return ∇²
+@inline @fastmath @muladd function _rk_with_∂rk_∂η(kernel::RK_H1, η::SVector, ξ::SVector)
+    t   = η - ξ
+    x   = kernel.ε * _norm(t)
+    e⁻ˣ = exp(-x)
+    y   = (1 + x) * e⁻ˣ
+    ∇   = -kernel.ε^2 * e⁻ˣ * t
+    return y, ∇
 end
 
-@inline @fastmath function _∂²rk_∂η∂ξ(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}) where {n}
+@inline @fastmath @muladd function _rk_with_∂rk_∂η(kernel::RK_H0, η::SVector, ξ::SVector)
+    # Note: Derivative of spline built with reproducing kernel RK_H0 is discontinuous at the spline nodes, i.e. when η = ξ.
+    t     = η - ξ
+    tnrm  = _norm(t)
+    itnrm = ifelse(tnrm > eps(typeof(tnrm)), inv(tnrm), zero(tnrm))
+    x     = kernel.ε * tnrm
+    y     = exp(-x)
+    ∇     = (-kernel.ε * y * itnrm) * t
+    return y, ∇
+end
+
+@inline @fastmath @muladd function _∂²rk_∂ηⁱ∂ξʲ_ûᵢ_v̂ⱼ(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}, û::SVector{n}, v̂::SVector{n}) where {n}
     ε     = kernel.ε
     ε²    = ε * ε
     t     = η - ξ
     tnrm  = _norm(t)
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
-    S     = SMatrix{n, n, typeof(x)}
-    ∇²    = S(((1 + x) * ε²e⁻ˣ) * LinearAlgebra.I)
+    return ((1 + x) * ε²e⁻ˣ) * (û ⋅ v̂) - (ε² * ε²e⁻ˣ) * (û ⋅ t) * (t ⋅ v̂)
+end
+
+@inline @fastmath @muladd function _∂²rk_∂ηⁱ∂ξʲ_ûᵢ_v̂ⱼ(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}, û::SVector{n}, v̂::SVector{n}) where {n}
+    # Note: Second derivative of spline built with reproducing kernel RK_H1 is discontinuous at the spline nodes, i.e. when η = ξ.
+    ε     = kernel.ε
+    ε²    = ε * ε
+    t     = η - ξ
+    tnrm  = _norm(t)
+    itnrm = ifelse(tnrm > eps(one(tnrm)), inv(tnrm), zero(tnrm))
+    x     = ε * tnrm
+    ε²e⁻ˣ = ε² * exp(-x)
+    return ε²e⁻ˣ * (û ⋅ v̂) - (ε * ε²e⁻ˣ * itnrm) * (û ⋅ t) * (t ⋅ v̂)
+end
+
+@inline @fastmath @muladd function _∂²rk_∂ηⁱ∂ξ_ûᵢ(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}, û::SVector{n}) where {n}
+    ε     = kernel.ε
+    ε²    = ε * ε
+    t     = η - ξ
+    tnrm  = _norm(t)
+    x     = ε * tnrm
+    ε²e⁻ˣ = ε² * exp(-x)
+    return ((1 + x) * ε²e⁻ˣ) * û - ((ε² * ε²e⁻ˣ) * (û ⋅ t)) * t
+end
+
+@inline @fastmath @muladd function _∂²rk_∂ηⁱ∂ξ_ûᵢ(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}, û::SVector{n}) where {n}
+    # Note: Second derivative of spline built with reproducing kernel RK_H1 is discontinuous at the spline nodes, i.e. when η = ξ.
+    ε     = kernel.ε
+    ε²    = ε * ε
+    t     = η - ξ
+    tnrm  = _norm(t)
+    itnrm = ifelse(tnrm > eps(one(tnrm)), inv(tnrm), zero(tnrm))
+    x     = ε * tnrm
+    ε²e⁻ˣ = ε² * exp(-x)
+    return ε²e⁻ˣ * û - ((ε * ε²e⁻ˣ * itnrm) * (û ⋅ t)) * t
+end
+
+@inline @fastmath @muladd function _∂rk_∂ηⁱ_ûᵢ_with_∂²rk_∂ηⁱ∂ξ_ûᵢ(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}, û::SVector{n}) where {n}
+    ε     = kernel.ε
+    ε²    = ε * ε
+    t     = η - ξ
+    tnrm  = _norm(t)
+    x     = ε * tnrm
+    ε²e⁻ˣ = ε² * exp(-x)
+    tmp1  = ε²e⁻ˣ * û
+    tmp2  = (1 + x) * tmp1
+    ∇ᵀû  = -(tmp2 ⋅ t)
+    ∇²û  = tmp2 - ε² * (tmp1 ⋅ t) * t
+    return ∇ᵀû, ∇²û
+end
+
+@inline @fastmath @muladd function _∂rk_∂ηⁱ_ûᵢ_with_∂²rk_∂ηⁱ∂ξ_ûᵢ(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}, û::SVector{n}) where {n}
+    # Note: Second derivative of spline built with reproducing kernel RK_H1 is discontinuous at the spline nodes, i.e. when η = ξ.
+    ε     = kernel.ε
+    ε²    = ε * ε
+    t     = η - ξ
+    tnrm  = _norm(t)
+    itnrm = ifelse(tnrm > eps(one(tnrm)), inv(tnrm), zero(tnrm))
+    x     = ε * tnrm
+    ε²e⁻ˣ = ε² * exp(-x)
+    tmp1  = ε²e⁻ˣ * û
+    tmp2  = (tmp1 ⋅ t)
+    ∇ᵀû  = -tmp2
+    ∇²û  = tmp1 - (ε * itnrm * tmp2) * t
+    return ∇ᵀû, ∇²û
+end
+
+@inline @fastmath @muladd function _∂²rk_∂η∂ξ(kernel::RK_H2, η::SVector{n}, ξ::SVector{n}) where {n}
+    ε     = kernel.ε
+    ε²    = ε * ε
+    t     = η - ξ
+    tnrm  = _norm(t)
+    x     = ε * tnrm
+    ε²e⁻ˣ = ε² * exp(-x)
+    ∇²    = SMatrix{n, n, typeof(x)}(((1 + x) * ε²e⁻ˣ) * LinearAlgebra.I)
     ∇²    -= ((ε² * ε²e⁻ˣ) * t) * t'
     return ∇²
 end
 
-@inline @fastmath function _∂²rk_∂η∂ξ(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}) where {n}
-    # Note: Second derivative of spline built with reproducing kernel RK_H1 does not exist at the spline nodes
+@inline @fastmath @muladd function _∂²rk_∂η∂ξ(kernel::RK_H1, η::SVector{n}, ξ::SVector{n}) where {n}
+    # Note: Second derivative of spline built with reproducing kernel RK_H1 is discontinuous at the spline nodes, i.e. when η = ξ.
     ε     = kernel.ε
     ε²    = ε * ε
     t     = η - ξ
     tnrm  = _norm(t)
+    itnrm = ifelse(tnrm > eps(one(tnrm)), inv(tnrm), zero(tnrm))
     x     = ε * tnrm
     ε²e⁻ˣ = ε² * exp(-x)
-    S     = SMatrix{n, n, typeof(x)}
-    ∇²    = S(ε²e⁻ˣ * LinearAlgebra.I)
-    ∇²    -= ifelse(x > eps(typeof(x)), ((ε * ε²e⁻ˣ / tnrm) * t) * t', zeros(S))
+    ∇²    = SMatrix{n, n, typeof(x)}(ε²e⁻ˣ * LinearAlgebra.I)
+    ∇²    -= ((ε * ε²e⁻ˣ * itnrm) * t) * t'
     return ∇²
 end

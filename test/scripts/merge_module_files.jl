@@ -66,6 +66,7 @@ for (dir, (mainfile, depfiles)) in [
         "2D.jl",
         "3D.jl",
         "elastic.jl",
+        "derivatives.jl",
     ]
 ]
     outdir = isempty(ARGS) ? pwd() : ARGS[1]
